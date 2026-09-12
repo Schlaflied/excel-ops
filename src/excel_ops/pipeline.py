@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
 from pathlib import Path
+from typing import Any
 
-from .extraction import load_extracted_json
 from .inference import infer_fields
+from .ingestion import load_input_records
 from .review import review_record
 from .workbook import verify_workbook, write_workbook
 
@@ -15,7 +15,7 @@ def run_pipeline(
     confidence_threshold: float = 0.85,
     locale: str | None = None,
 ) -> dict[str, Any]:
-    extracted = load_extracted_json(input_path)
+    extracted = load_input_records(input_path)
     field_inferences = infer_fields(
         [
             {
