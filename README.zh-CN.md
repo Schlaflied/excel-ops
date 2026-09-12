@@ -68,6 +68,10 @@ excel-ops examples/extracted-records.json output.xlsx
 # 同一命令也接受 .xlsx、.xlsm 和 .csv 输入。
 ```
 
+如果已知日期顺序或小数分隔符，可传入 `--locale en-US` 等明确的地区提示。
+交付文件会包含 `Type Inference` 工作表，JSON 结果也会给出字段级置信度和歧义计数。
+数字形状的标识符和前导零会保留为文本；歧义日期进入复核，不会被静默转换。
+
 完整对话与交付规则见[Agent 工作流](docs/agent-workflow.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.md)。
 
 输入示例：

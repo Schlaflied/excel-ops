@@ -63,6 +63,12 @@ excel-ops examples/extracted-records.json output.xlsx
 # The same command accepts .xlsx, .xlsm, and .csv inputs.
 ```
 
+Pass `--locale en-US` (or another explicit locale hint) when date order or
+decimal separators are known. The delivery includes a `Type Inference` sheet,
+and the JSON result exposes field-level confidence and ambiguity counts. Numeric
+identifiers and leading zeroes remain text; ambiguous dates are sent to review
+rather than silently converted.
+
 See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [Connector contract](docs/connectors.md) for local and cloud spreadsheet behavior.
 
 ## Input format

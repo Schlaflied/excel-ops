@@ -11,8 +11,9 @@ def main() -> None:
     parser.add_argument("input", help="Input .xlsx, .xlsm, .csv, or provider-neutral image extraction .json")
     parser.add_argument("output", help="Output .xlsx path")
     parser.add_argument("--confidence-threshold", type=float, default=0.85)
+    parser.add_argument("--locale", help="Locale hint such as en-US, en-GB, zh-CN, or de-DE")
     args = parser.parse_args()
-    print(json.dumps(run_pipeline(args.input, args.output, args.confidence_threshold), ensure_ascii=False))
+    print(json.dumps(run_pipeline(args.input, args.output, args.confidence_threshold, args.locale), ensure_ascii=False))
 
 
 if __name__ == "__main__":

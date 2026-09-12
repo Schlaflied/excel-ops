@@ -6,6 +6,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 
+from .inference import FieldInference
 from .models import ReviewedRecord
 
 HEADERS = ["Location", "Event date", "Identifier", "Category", "Confidence", "Source", "Review reasons"]
@@ -24,7 +25,9 @@ def _append_record(ws, reviewed: ReviewedRecord) -> None:
     ])
 
 
-def write_workbook(records: list[ReviewedRecord], output_path: str | Path) -> Path:
+def write_workbook(
+    records: list[ReviewedRecord], output_path: str | Path, field_inferences: list[FieldInference] | None = None
+) -> Path:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     wb = Workbook()
@@ -32,6 +35,7 @@ def write_workbook(records: list[ReviewedRecord], output_path: str | Path) -> Pa
     accepted.title = "Accepted"
     review = wb.create_sheet("Review")
     audit = wb.create_sheet("Audit")
+    type_report = wb.create_sheet("Type Inference")
 
     for ws in (accepted, review):
         ws.append(HEADERS)
@@ -54,6 +58,20 @@ def write_workbook(records: list[ReviewedRecord], output_path: str | Path) -> Pa
     for cell in audit[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="548235")
+
+    type_report.append([
+        "Field", "Inferred type", "Confidence", "Locale", "Unit", "Samples",
+        "Low confidence", "Ambiguous", "Leading zero preserved",
+    ])
+    for item in field_inferences or []:
+        type_report.append([
+            item.field, item.inferred_type, item.confidence, item.locale, item.unit,
+            item.sample_count, item.low_confidence_count, item.ambiguous_count,
+            item.leading_zero_preserved,
+        ])
+    for cell in type_report[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="8064A2")
 
     for ws in wb.worksheets:
         for column in ws.columns:
