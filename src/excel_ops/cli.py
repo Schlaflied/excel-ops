@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+import argparse
+import json
+
+from .pipeline import run_pipeline
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Turn reviewed extraction records into an auditable Excel delivery")
+    parser.add_argument("input", help="Provider-neutral extracted JSON")
+    parser.add_argument("output", help="Output .xlsx path")
+    parser.add_argument("--confidence-threshold", type=float, default=0.85)
+    args = parser.parse_args()
+    print(json.dumps(run_pipeline(args.input, args.output, args.confidence_threshold), ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

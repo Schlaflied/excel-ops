@@ -1,0 +1,19 @@
+{
+  "source": "synthetic-patrol-sheet.png",
+  "records": [
+    {
+      "location": "100 Example Avenue",
+      "event_date": "2026-09-08",
+      "identifier": "DEMO 123",
+      "category": "synthetic example",
+      "confidence": 0.97
+    },
+    {
+      "location": "200 Sample Street",
+      "event_date": "",
+      "identifier": "CHECK 9",
+      "category": "needs human review",
+      "confidence": 0.61
+    }
+  ]
+}
