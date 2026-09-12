@@ -1,3 +1,5 @@
+[中文](schema-drift.zh-CN.md) | English
+
 # Schema drift checks
 
 Compare a baseline workbook with one or more incoming workbooks before any data is written:

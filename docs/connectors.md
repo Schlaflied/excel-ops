@@ -1,3 +1,5 @@
+[中文](connectors.zh-CN.md) | English
+
 # Connector contract
 
 Excel-Ops keeps business logic independent from storage providers. A connector should provide equivalent behavior even when the underlying platform works differently.

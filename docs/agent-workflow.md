@@ -1,3 +1,5 @@
+[中文](agent-workflow.zh-CN.md) | English
+
 # Agent workflow
 
 Excel-Ops uses the conversation as its interface. Users describe an outcome and provide sources; the agent owns internal routing and tool selection.
