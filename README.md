@@ -22,7 +22,7 @@ In Codex or another agent that follows the Agent Skills standard, invoke the rep
 
 The initial connector order is local XLSX/CSV, local cloud-sync folders, Google Sheets, Dropbox API, Feishu Sheets, and WPS Sheets. Cloud credentials belong to the user's environment and are never stored in a project or delivery package.
 
-The first vertical slice focuses on a common business task: extract rows from images or structured captures, validate them against a declared schema, and write only accepted records into an Excel workbook. Uncertain records go to a separate review sheet instead of being silently guessed.
+The first vertical slice focuses on a common business task: ingest XLSX or CSV rows (or provider-neutral image extraction JSON), detect their layout, validate them against a declared schema, and write only accepted records into an Excel workbook. Uncertain records go to a separate review sheet instead of being silently guessed. XLSX sheet selection is content-based, and an unrecognized layout stops the run instead of producing partial output.
 
 ## Why this exists
 
@@ -60,9 +60,18 @@ Names, locations and identifiers in this repository are fictional. The example d
 ```bash
 python -m pip install -e .
 excel-ops examples/extracted-records.json output.xlsx
+# The same command accepts .xlsx, .xlsm, and .csv inputs.
 ```
 
+Pass `--locale en-US` (or another explicit locale hint) when date order or
+decimal separators are known. The delivery includes a `Type Inference` sheet,
+and the JSON result exposes field-level confidence and ambiguity counts. Numeric
+identifiers and leading zeroes remain text; ambiguous dates are sent to review
+rather than silently converted.
+
 See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [Connector contract](docs/connectors.md) for local and cloud spreadsheet behavior.
+
+For comparing workbook structures before append, join, or write-back, see [Schema drift](docs/schema-drift.md).
 
 ## Input format
 

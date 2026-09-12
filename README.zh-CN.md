@@ -34,7 +34,7 @@ Excel-Ops 不是一个“帮你写公式”的 AI。它把表格工作视为一�
 
 ## 第一版范围
 
-第一个垂直切片处理一种常见企业任务：从截图、扫描件或结构化提取结果中获得多行记录，按照明确的数据结构进行验证，再把通过检查的数据写入 Excel。
+第一个垂直切片处理一种常见企业任务：从 XLSX、CSV、截图或结构化提取结果中获得多行记录，按照明确的数据结构进行验证，再把通过检查的数据写入 Excel。XLSX 数据页根据内容而不是固定 sheet 名选择；无法识别布局时直接停止，不生成静默的部分输出。
 
 - 接收由任意 OCR 或视觉模型产生的统一 JSON；
 - 为每条记录保留源图片名称和提取置信度；
@@ -65,7 +65,12 @@ Excel-Ops 应当完成：
 ```bash
 python -m pip install -e .
 excel-ops examples/extracted-records.json output.xlsx
+# 同一命令也接受 .xlsx、.xlsm 和 .csv 输入。
 ```
+
+如果已知日期顺序或小数分隔符，可传入 `--locale en-US` 等明确的地区提示。
+交付文件会包含 `Type Inference` 工作表，JSON 结果也会给出字段级置信度和歧义计数。
+数字形状的标识符和前导零会保留为文本；歧义日期进入复核，不会被静默转换。
 
 完整对话与交付规则见[Agent 工作流](docs/agent-workflow.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.md)。
 

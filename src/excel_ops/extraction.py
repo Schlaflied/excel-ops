@@ -12,4 +12,11 @@ def load_extracted_json(path: str | Path) -> list[ExtractedRecord]:
     if not isinstance(payload, dict) or not isinstance(payload.get("records"), list):
         raise ValueError("Input must be an object containing a records array")
     source = str(payload.get("source") or Path(path).name)
-    return [ExtractedRecord.from_dict(item, source) for item in payload["records"] if isinstance(item, dict)]
+    records = []
+    for item in payload["records"]:
+        if not isinstance(item, dict):
+            continue
+        enriched = dict(item)
+        enriched.setdefault("source_file", source)
+        records.append(ExtractedRecord.from_dict(enriched, source))
+    return records
