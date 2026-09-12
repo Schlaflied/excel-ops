@@ -2,8 +2,9 @@
 
 from .inference import FieldInference, ValueInference, infer_fields, infer_value
 from .matching import Destination, MatchCandidate, MatchResult, preallocate_records, stable_record_id
-from .pipeline import run_pipeline
+from .period_refresh import DateRole, DateSlot, RefreshChange, RefreshResult, SlotTarget, refresh_workbook_period
 from .periods import AmbiguousPeriodError, PeriodResolutionError, PeriodResult, resolve_period
+from .pipeline import run_pipeline
 from .review_pack import (
     ReviewDecision,
     ReviewHistoryEntry,
@@ -16,6 +17,8 @@ from .review_pack import (
 
 __all__ = [
     "Destination",
+    "DateRole",
+    "DateSlot",
     "AmbiguousPeriodError",
     "FieldInference",
     "MatchCandidate",
@@ -26,14 +29,18 @@ __all__ = [
     "ReviewHistoryEntry",
     "ReviewImportResult",
     "ReviewPackRow",
+    "RefreshChange",
+    "RefreshResult",
+    "SlotTarget",
     "ValueInference",
     "import_review_pack",
     "infer_fields",
     "infer_value",
     "preallocate_records",
+    "refresh_workbook_period",
+    "resolve_period",
     "review_rows_from_match_results",
     "run_pipeline",
-    "resolve_period",
     "stable_record_id",
     "write_review_pack",
 ]
