@@ -108,17 +108,13 @@ The detailed, acceptance-test-driven roadmap lives in [Roadmap issue #5](https:/
 2. **Phase 2 — Cloud connectors:** the same workflow over synced folders, Google Sheets, Dropbox, Feishu, WPS, and later Microsoft Graph where demand justifies it.
 3. **Phase 3 — Prompt-to-analysis:** safe workbook joins, multi-tab delivery grouping, verified summaries/pivots, and repeatable automation.
 
-### Phase 1 foundations in v0.3.0
+## Current capabilities
 
-| Capability | Issue | Pull request | Status |
-|---|---:|---:|---|
-| Multi-source, layout-aware ingestion | [#1](https://github.com/Schlaflied/excel-ops/issues/1) | [#29](https://github.com/Schlaflied/excel-ops/pull/29) | Merged |
-| Type, unit, and locale inference | [#24](https://github.com/Schlaflied/excel-ops/issues/24) | [#28](https://github.com/Schlaflied/excel-ops/pull/28) | Merged |
-| Schema-drift detection and mappings | [#10](https://github.com/Schlaflied/excel-ops/issues/10) | [#30](https://github.com/Schlaflied/excel-ops/pull/30) | Merged |
-| Strict matching and deduplication | [#2](https://github.com/Schlaflied/excel-ops/issues/2) | [#27](https://github.com/Schlaflied/excel-ops/pull/27) | Merged |
-| Offline human-review round trip | [#18](https://github.com/Schlaflied/excel-ops/issues/18) | [#31](https://github.com/Schlaflied/excel-ops/pull/31) | Merged |
+v0.3.0 released multi-source ingestion, type and locale inference, schema-drift detection, strict matching, and an offline human-review round trip. `main` also contains business-period resolution, period-aware date refresh, and safe output naming; those three capabilities are not yet part of a newer release.
 
-These foundations are merged and covered by the repository test suite. They do not yet complete the full Phase 1 delivery loop: the next vertical-slice boundary is safe template write-back ([#3](https://github.com/Schlaflied/excel-ops/issues/3)) followed by independent delivery verification ([#4](https://github.com/Schlaflied/excel-ops/issues/4)).
+[See the complete capability ledger, implementation status, safety boundaries, and linked issues/PRs](docs/capabilities.md).
+
+These foundations do not yet complete the full Phase 1 delivery loop. The next vertical-slice boundary is safe template write-back ([#3](https://github.com/Schlaflied/excel-ops/issues/3)) followed by independent delivery verification ([#4](https://github.com/Schlaflied/excel-ops/issues/4)).
 
 ## License
 
