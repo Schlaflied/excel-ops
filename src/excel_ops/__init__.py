@@ -23,6 +23,12 @@ from .delivery_verification import (
     WorkbookVerifier,
     verify_and_deliver,
 )
+from .formula_verification import (
+    ExpectedErrorMarker,
+    FormulaRegion,
+    FormulaVerifier,
+    SummaryReconciliation,
+)
 from .pipeline import run_pipeline
 from .review_pack import (
     ReviewDecision,
@@ -78,5 +84,9 @@ __all__ = [
     "VerificationFinding",
     "WorkbookVerifier",
     "verify_and_deliver",
+    "ExpectedErrorMarker",
+    "FormulaRegion",
+    "FormulaVerifier",
+    "SummaryReconciliation",
     "verify_output_name",
 ]
