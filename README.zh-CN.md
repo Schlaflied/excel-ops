@@ -109,17 +109,17 @@ excel-ops examples/extracted-records.json output.xlsx
 2. **Phase 2 — Cloud Connectors：**将同一工作流接到本地同步目录、Google Sheets、Dropbox、飞书、WPS；再按真实需求评估 Microsoft Graph。
 3. **Phase 3 — Prompt-to-Analysis：**支持安全的工作簿合并、多 Tab 交付分组、经过验证的汇总/透视表和周期性自动化。
 
-### 当前 Phase 1 实现 PR
+### v0.3.0 已合并的 Phase 1 基础能力
 
 | 能力 | Issue | Pull request | 状态 |
 |---|---:|---:|---|
-| 多来源、布局感知导入 | [#1](https://github.com/Schlaflied/excel-ops/issues/1) | [#29](https://github.com/Schlaflied/excel-ops/pull/29) | Open |
-| 类型、单位和地区格式推断 | [#24](https://github.com/Schlaflied/excel-ops/issues/24) | [#28](https://github.com/Schlaflied/excel-ops/pull/28) | Open |
-| Schema Drift 检测与映射 | [#10](https://github.com/Schlaflied/excel-ops/issues/10) | [#30](https://github.com/Schlaflied/excel-ops/pull/30) | Open；stacked on #28 |
-| 严格匹配与去重 | [#2](https://github.com/Schlaflied/excel-ops/issues/2) | [#27](https://github.com/Schlaflied/excel-ops/pull/27) | Open |
-| 离线人工复核闭环 | [#18](https://github.com/Schlaflied/excel-ops/issues/18) | [#31](https://github.com/Schlaflied/excel-ops/pull/31) | Open |
+| 多来源、布局感知导入 | [#1](https://github.com/Schlaflied/excel-ops/issues/1) | [#29](https://github.com/Schlaflied/excel-ops/pull/29) | 已合并 |
+| 类型、单位和地区格式推断 | [#24](https://github.com/Schlaflied/excel-ops/issues/24) | [#28](https://github.com/Schlaflied/excel-ops/pull/28) | 已合并 |
+| Schema Drift 检测与映射 | [#10](https://github.com/Schlaflied/excel-ops/issues/10) | [#30](https://github.com/Schlaflied/excel-ops/pull/30) | 已合并 |
+| 严格匹配与去重 | [#2](https://github.com/Schlaflied/excel-ops/issues/2) | [#27](https://github.com/Schlaflied/excel-ops/pull/27) | 已合并 |
+| 离线人工复核闭环 | [#18](https://github.com/Schlaflied/excel-ops/issues/18) | [#31](https://github.com/Schlaflied/excel-ops/pull/31) | 已合并 |
 
-这些仍是待审核分支，不代表功能已经发布。下一段纵向闭环是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），然后独立重新打开并验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
+这些基础能力已经合入主分支并由仓库测试覆盖，但尚未完成整个 Phase 1 交付闭环。下一段纵向闭环是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），然后独立重新打开并验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
 
 ## License
 
