@@ -72,7 +72,9 @@ excel-ops examples/extracted-records.json output.xlsx
 交付文件会包含 `Type Inference` 工作表，JSON 结果也会给出字段级置信度和歧义计数。
 数字形状的标识符和前导零会保留为文本；歧义日期进入复核，不会被静默转换。
 
-完整对话与交付规则见[Agent 工作流](docs/agent-workflow.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.md)。
+完整对话与交付规则见[Agent 工作流](docs/agent-workflow.zh-CN.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.zh-CN.md)。
+
+在执行 append、join 或写回之前比较工作簿结构，见 [Schema Drift 检查](docs/schema-drift.zh-CN.md)。
 
 输入示例：
 
@@ -113,7 +115,7 @@ excel-ops examples/extracted-records.json output.xlsx
 
 v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift、严格匹配和离线人工复核。`main` 还新增了业务周期解析、周期感知日期刷新和安全文件命名；这三项尚未进入新的 Release。
 
-[查看完整能力、实现状态、安全边界与对应 Issue/PR](docs/capabilities.md)。
+[查看完整能力、实现状态、安全边界与对应 Issue/PR](docs/capabilities.zh-CN.md)。
 
 下一段纵向闭环是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），然后独立重新打开并验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
 

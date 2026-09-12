@@ -1,104 +1,106 @@
-# 当前能力与实现状态
+[中文](capabilities.zh-CN.md) | English
 
-本页记录 Excel Ops **当前确实可以做什么、代码位于哪里、有什么安全边界，以及能力是否已经发布**。未来规划仍以 [Roadmap #5](https://github.com/Schlaflied/excel-ops/issues/5) 为准。
+# Current capabilities and implementation status
 
-## 状态口径
+This page records **what Excel Ops can actually do today, where the implementation lives, its safety boundaries, and whether the capability has been released**. Future plans remain in [Roadmap #5](https://github.com/Schlaflied/excel-ops/issues/5).
 
-| 状态 | 含义 |
+## Status definitions
+
+| Status | Meaning |
 |---|---|
-| 已发布 | 已合入 `main`，并包含在对应 GitHub Release 中。 |
-| main 已合并 | 已合入 `main` 且通过仓库测试，但尚未包含在新的 Release 中。 |
-| 规划中 | 只有 Issue、接口设想或 Roadmap，不应被描述成现有能力。 |
+| Released | Merged into `main` and included in the named GitHub Release. |
+| Merged to main | Merged into `main` and covered by repository tests, but not yet included in a newer Release. |
+| Planned | Exists only as an Issue, interface proposal, or Roadmap item and must not be described as available. |
 
-PR 合并、自动测试、实际文件验证和业务人员批准是不同证据。某个模块“已合并”不代表完整业务闭环已经成立。
+A merged PR, automated tests, verification of an actual persisted file, and business approval are separate kinds of evidence. A merged module does not establish that the complete business workflow works end to end.
 
-## 已发布：v0.3.0
+## Released: v0.3.0
 
-[v0.3.0](https://github.com/Schlaflied/excel-ops/releases/tag/v0.3.0) 发布了 Phase 1 的第一组本地表格基础能力。
+[v0.3.0](https://github.com/Schlaflied/excel-ops/releases/tag/v0.3.0) delivered the first group of local-spreadsheet foundations for Phase 1.
 
-### 1. 多来源、布局感知导入
+### 1. Multi-source, layout-aware ingestion
 
-- **能做什么**：读取 `.xlsx`、`.xlsm`、`.csv` 和 provider-neutral 图片提取 JSON；根据内容识别数据 sheet、表头和数据区域。
-- **输出与证据**：统一为 `ExtractedRecord`，保留文件、sheet、行号或图片区域来源。
-- **安全边界**：未知布局会停止，不生成静默的部分输出；`.xlsm` 可以读取，但不会执行宏。
-- **实现**：[Issue #1](https://github.com/Schlaflied/excel-ops/issues/1) / [PR #29](https://github.com/Schlaflied/excel-ops/pull/29)
+- **What it does:** reads `.xlsx`, `.xlsm`, `.csv`, and provider-neutral image-extraction JSON; detects the data sheet, header, and data region from content.
+- **Output and evidence:** normalizes rows into `ExtractedRecord` values while retaining file, sheet, row, or image-region provenance.
+- **Safety boundary:** an unknown layout stops the run instead of producing silent partial output; `.xlsm` files can be read, but macros are never executed.
+- **Implementation:** [Issue #1](https://github.com/Schlaflied/excel-ops/issues/1) / [PR #29](https://github.com/Schlaflied/excel-ops/pull/29)
 
-### 2. 数据类型、单位与地区格式推断
+### 2. Data type, unit, and locale inference
 
-- **能做什么**：识别日期、Excel serial date、数字、百分比、货币和标识符；接受明确的 locale 提示。
-- **输出与证据**：提供字段级类型、置信度、单位、locale、歧义数和低置信度计数。
-- **安全边界**：员工号、邮编、电话和前导零优先保留为文本；歧义日期进入复核，不静默转换。
-- **实现**：[Issue #24](https://github.com/Schlaflied/excel-ops/issues/24) / [PR #28](https://github.com/Schlaflied/excel-ops/pull/28)
+- **What it does:** identifies dates, Excel serial dates, numbers, percentages, currencies, and identifiers; accepts an explicit locale hint.
+- **Output and evidence:** reports field-level type, confidence, unit, locale, ambiguity counts, and low-confidence counts.
+- **Safety boundary:** employee IDs, postal codes, phone numbers, and leading zeroes are preserved as text; ambiguous dates go to review instead of being silently converted.
+- **Implementation:** [Issue #24](https://github.com/Schlaflied/excel-ops/issues/24) / [PR #28](https://github.com/Schlaflied/excel-ops/pull/28)
 
-### 3. Schema Drift 检测与确认映射
+### 3. Schema-drift detection and confirmed mappings
 
-- **能做什么**：比较基线工作簿与候选工作簿，识别字段新增、删除、重排、类型、必填性、枚举和记录粒度变化。
-- **输出与证据**：生成机器可读 drift report，并报告对 append、join 和 delivery grouping 的影响。
-- **安全边界**：启发式 rename 只能成为复核建议；只有人工确认的映射可以保存并复用。
-- **实现**：[Issue #10](https://github.com/Schlaflied/excel-ops/issues/10) / [PR #30](https://github.com/Schlaflied/excel-ops/pull/30) / [详细说明](schema-drift.md)
+- **What it does:** compares a baseline workbook with candidate workbooks and detects field additions, removals, reorderings, type changes, requiredness changes, enum changes, and changes in record granularity.
+- **Output and evidence:** creates a machine-readable drift report and describes downstream impact on append, join, and delivery grouping.
+- **Safety boundary:** heuristic rename matches remain review suggestions; only human-confirmed mappings can be saved and reused.
+- **Implementation:** [Issue #10](https://github.com/Schlaflied/excel-ops/issues/10) / [PR #30](https://github.com/Schlaflied/excel-ops/pull/30) / [Detailed guide](schema-drift.md)
 
-### 4. 严格匹配、预分配与去重
+### 4. Strict matching, preallocation, and deduplication
 
-- **能做什么**：按配置精确匹配、忽略大小写匹配和规范化匹配的顺序，将一条记录预分配给最多一个目标。
-- **输出与证据**：返回稳定 record ID、使用的规则、置信信息、候选目标和异常原因。
-- **安全边界**：模糊匹配永远只能进入 review；冲突、重复和未匹配记录不会自动写回。
-- **实现**：[Issue #2](https://github.com/Schlaflied/excel-ops/issues/2) / [PR #27](https://github.com/Schlaflied/excel-ops/pull/27)
+- **What it does:** applies configured exact, case-insensitive, and normalized matching in order and preallocates each record to at most one destination.
+- **Output and evidence:** returns a stable record ID, the applied rule, confidence information, candidate destinations, and exception reasons.
+- **Safety boundary:** fuzzy matching is always review-only; conflicts, duplicates, and unmatched records are never written automatically.
+- **Implementation:** [Issue #2](https://github.com/Schlaflied/excel-ops/issues/2) / [PR #27](https://github.com/Schlaflied/excel-ops/pull/27)
 
-### 5. 离线人工复核包
+### 5. Offline human-review pack
 
-- **能做什么**：生成普通 Excel 可以打开和填写的 Review Pack；支持 `accept`、`correct`、`reject` 和 `cannot determine`。
-- **输出与证据**：复核结果按稳定 record ID 回导，并保留幂等的审核历史。
-- **安全边界**：`correct` 必须提供修正值；`cannot determine` 不会进入已接受结果；隐藏 manifest 检测表头、ID、候选值和重复 ID 篡改。
-- **实现**：[Issue #18](https://github.com/Schlaflied/excel-ops/issues/18) / [PR #31](https://github.com/Schlaflied/excel-ops/pull/31)
+- **What it does:** creates a review workbook that opens in ordinary Excel and supports `accept`, `correct`, `reject`, and `cannot determine` decisions.
+- **Output and evidence:** imports decisions by stable record ID and retains an idempotent review history.
+- **Safety boundary:** `correct` requires a replacement value; `cannot determine` never enters accepted results; a hidden manifest detects tampered headers, IDs, candidate values, and duplicate IDs.
+- **Implementation:** [Issue #18](https://github.com/Schlaflied/excel-ops/issues/18) / [PR #31](https://github.com/Schlaflied/excel-ops/pull/31)
 
-## main 已合并，尚未发布
+## Merged to main, not yet released
 
-以下能力已进入 `main`，但晚于 v0.3.0，因此不能写成“v0.3.0 已发布”。
+The following capabilities entered `main` after v0.3.0 and therefore must not be described as part of that release.
 
-### 6. 确定性业务周期解析
+### 6. Deterministic business-period resolution
 
-- **能做什么**：解析周、月、季度、自定义日期、财年和财季，并支持明确的 `as_of`、时区、周起始日和财年起始月。
-- **输出与证据**：`resolve_period(...)` 返回统一的 `PeriodResult`，供刷新与命名模块复用。
-- **安全边界**：“最近一周”等依赖隐含当前时间的歧义表达会报错，不会自行猜测。
-- **实现**：[Issue #16](https://github.com/Schlaflied/excel-ops/issues/16) / [PR #33](https://github.com/Schlaflied/excel-ops/pull/33)
+- **What it does:** resolves weeks, months, quarters, custom date ranges, fiscal years, and fiscal quarters with explicit `as_of`, timezone, week-start, and fiscal-year-start inputs.
+- **Output and evidence:** `resolve_period(...)` returns one shared `PeriodResult` consumed by refresh and naming modules.
+- **Safety boundary:** ambiguous expressions such as “last week” that depend on an implicit current date raise an error instead of being guessed.
+- **Implementation:** [Issue #16](https://github.com/Schlaflied/excel-ops/issues/16) / [PR #33](https://github.com/Schlaflied/excel-ops/pull/33)
 
-### 7. 周期感知的日期刷新
+### 7. Period-aware date refresh
 
-- **能做什么**：按声明式日期槽位更新允许修改的周期日期，支持 dry run、零记录期间更新和写后逐槽验证。
-- **输出与证据**：刷新计划与实际写入结果分开，使用 `PeriodResult` 作为日期权威来源。
-- **安全边界**：历史日期、公式日期和未声明区域不被自动改写；重复运行保持幂等。
-- **实现**：[Issue #9](https://github.com/Schlaflied/excel-ops/issues/9) / [PR #34](https://github.com/Schlaflied/excel-ops/pull/34)
+- **What it does:** updates declared date slots for an authorized business period, with dry run, zero-record-period updates, and post-write verification for every slot.
+- **Output and evidence:** keeps the refresh plan separate from persisted results and treats `PeriodResult` as the authoritative date source.
+- **Safety boundary:** historical dates, formula dates, and undeclared regions are not rewritten; repeated execution is idempotent.
+- **Implementation:** [Issue #9](https://github.com/Schlaflied/excel-ops/issues/9) / [PR #34](https://github.com/Schlaflied/excel-ops/pull/34)
 
-### 8. 安全、周期感知的输出文件名
+### 8. Safe, period-aware output naming
 
-- **能做什么**：从业务周期生成如 `payroll-2026-09-12.xlsx` 的安全文件名，处理扩展名、非法字符、目标目录和重名版本。
-- **输出与证据**：同内容目标可以 no-op；不同内容使用 `-rN` 后缀，并在落盘后核验实际路径。
-- **安全边界**：不读取系统当天日期；命名日期必须来自上游已经解析的业务周期。
-- **实现**：[Issue #17](https://github.com/Schlaflied/excel-ops/issues/17) / [PR #35](https://github.com/Schlaflied/excel-ops/pull/35)
+- **What it does:** creates safe names such as `payroll-2026-09-12.xlsx` from a business period and handles extensions, invalid characters, destination directories, and revision suffixes.
+- **Output and evidence:** an identical existing target can produce a no-op; different content receives a `-rN` suffix, and the persisted path is verified.
+- **Safety boundary:** the module does not read the system's current date; naming dates must come from the resolved upstream business period.
+- **Implementation:** [Issue #17](https://github.com/Schlaflied/excel-ops/issues/17) / [PR #35](https://github.com/Schlaflied/excel-ops/pull/35)
 
-## 当前可以组合到什么程度
+## What can currently be composed
 
-当前模块已经覆盖：
+The current modules cover:
 
 ```text
 ingest → normalize/type inference → schema check → strict match → human review
                                   period resolution → date refresh → safe naming
 ```
 
-这些能力有明确的数据结构和测试，但完整的 `write → verify → deliver` 纵向闭环仍未完成。因此，当前不能声称 Excel Ops 已经可以把任意企业模板端到端无人值守交付。
+These capabilities have explicit data contracts and tests, but the full `write → verify → deliver` vertical slice is not yet complete. Excel Ops therefore cannot yet claim unattended end-to-end delivery into arbitrary enterprise templates.
 
-## 尚未实现或尚未形成完整闭环
+## Not implemented or not yet complete end to end
 
-- [Issue #3](https://github.com/Schlaflied/excel-ops/issues/3)：安全写回现有企业工作簿模板；
-- [Issue #4](https://github.com/Schlaflied/excel-ops/issues/4)：重新打开并独立验证实际交付文件；
-- 公式完整性、逐项对账、来源 manifest 和完整 recipe；
-- 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；
-- Prompt 驱动的 append、join、多 Tab delivery grouping、汇总和透视表；
-- 完整合成数据端到端 fixture：`ingest → normalize → match → review → write → verify → deliver`。
+- [Issue #3](https://github.com/Schlaflied/excel-ops/issues/3): safe write-back into an existing enterprise workbook template;
+- [Issue #4](https://github.com/Schlaflied/excel-ops/issues/4): reopen and independently verify the actual delivery artifact;
+- formula integrity, item-level reconciliation, source manifests, and complete recipes;
+- local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;
+- prompt-driven append, join, multi-tab delivery grouping, summaries, and pivot tables;
+- a full synthetic end-to-end fixture for `ingest → normalize → match → review → write → verify → deliver`.
 
-## 维护规则
+## Maintenance rules
 
-- 合并功能 PR 时更新对应条目，但状态先写“main 已合并”。
-- 只有发布 GitHub Release 后，才把能力移动到“已发布”并注明版本。
-- 每项能力必须同时写清用途、边界和实现链接，不能只罗列模块名。
-- Roadmap 的未来计划留在 Issue #5；本页不复制不断变化的完整待办列表。
+- Update the relevant entry when a feature PR merges, but initially mark it only as “Merged to main.”
+- Move a capability to “Released” and name its version only after publishing a GitHub Release.
+- Every capability must state its purpose, boundary, and implementation links rather than listing only a module name.
+- Keep future plans in Roadmap #5; do not duplicate its changing backlog on this page.
