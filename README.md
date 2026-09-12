@@ -6,6 +6,8 @@ Excel-Ops is not an AI formula generator. It treats spreadsheets as an operation
 
 **ingest → extract → normalize → match → human review → write → verify → deliver**
 
+It is designed as a companion project to [PPT-Ops](https://github.com/luochen211/ppt-ops): PPT-Ops turns source material into a reviewable presentation delivery, while Excel-Ops turns images and messy tabular inputs into a reviewable data delivery.
+
 The first vertical slice focuses on a common business task: extract rows from images or structured captures, validate them against a declared schema, and write only accepted records into an Excel workbook. Uncertain records go to a separate review sheet instead of being silently guessed.
 
 ## Why this exists
@@ -23,6 +25,21 @@ People rarely want a `VLOOKUP`. They want to connect records from two imperfect 
 - Never use fuzzy matching as an invisible final decision.
 
 The repository intentionally does not include customer files, addresses, payroll records, credentials, or code copied from a private production workflow. The design was informed by a real recurring reporting pipeline, but all examples here are synthetic.
+
+## Synthetic field example
+
+Imagine a facilities team receiving weekly inspection records in several inconsistent spreadsheets and occasional phone screenshots. Each customer expects the results in a different workbook template.
+
+Excel-Ops should:
+
+1. identify the input layout;
+2. extract and normalize each observation;
+3. match it to a declared destination using strict rules;
+4. place uncertain matches in a human review queue;
+5. write accepted records into the appropriate workbook layout;
+6. verify counts, dates and required fields before delivery.
+
+Names, locations and identifiers in this repository are fictional. The example demonstrates the workflow without reproducing any organization's data or proprietary configuration.
 
 ## Quick start
 
