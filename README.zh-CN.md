@@ -74,6 +74,8 @@ excel-ops examples/extracted-records.json output.xlsx
 
 完整对话与交付规则见[Agent 工作流](docs/agent-workflow.zh-CN.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.zh-CN.md)。
 
+字段级批量确认、本次运行/项目作用域和冲突重确认见[批量歧义确认与 Recipe](docs/ambiguity-recipes.zh-CN.md)。
+
 在执行 append、join 或写回之前比较工作簿结构，见 [Schema Drift 检查](docs/schema-drift.zh-CN.md)。
 
 输入示例：
