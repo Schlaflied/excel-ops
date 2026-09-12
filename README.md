@@ -1,5 +1,7 @@
 # Excel-Ops
 
+[中文说明](README.zh-CN.md) | English
+
 Turn messy spreadsheet work into a reviewable delivery pipeline.
 
 Excel-Ops is not an AI formula generator. It treats spreadsheets as an operational workflow:
