@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "excel-ops"
-version = "0.1.0"
+version = "0.2.0"
 description = "Reviewable image-to-Excel and spreadsheet operations pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,3 +19,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
+norecursedirs = ["pytest-cache-files-*"]

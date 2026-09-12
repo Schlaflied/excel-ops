@@ -2,13 +2,25 @@
 
 [中文说明](README.zh-CN.md) | English
 
-Turn messy spreadsheet work into a reviewable delivery pipeline.
+### From images and messy tables to a checked, repeatable spreadsheet delivery
+
+Excel-Ops is a conversation-driven workflow for AI agents, not another spreadsheet web app. Give an agent the files and describe the outcome in plain language; the agent plans the operation, uses the appropriate local or cloud connector, isolates uncertainty, verifies the result, and returns a delivery package.
 
 Excel-Ops is not an AI formula generator. It treats spreadsheets as an operational workflow:
 
 **ingest → extract → normalize → match → human review → write → verify → deliver**
 
 It is designed as a companion project to [PPT-Ops](https://github.com/luochen211/ppt-ops): PPT-Ops turns source material into a reviewable presentation delivery, while Excel-Ops turns images and messy tabular inputs into a reviewable data delivery.
+
+## Use with an agent
+
+In Codex or another agent that follows the Agent Skills standard, invoke the repository skill:
+
+> Use `$excel-agent` to extract the rows from these screenshots, append only high-confidence records to the workbook, and put everything uncertain in a review sheet.
+
+`$excel-agent` is the only user-facing entry point. The Python CLI remains an internal deterministic capability used by the agent and by automated tests.
+
+The initial connector order is local XLSX/CSV, local cloud-sync folders, Google Sheets, Dropbox API, Feishu Sheets, and WPS Sheets. Cloud credentials belong to the user's environment and are never stored in a project or delivery package.
 
 The first vertical slice focuses on a common business task: extract rows from images or structured captures, validate them against a declared schema, and write only accepted records into an Excel workbook. Uncertain records go to a separate review sheet instead of being silently guessed.
 
@@ -49,6 +61,8 @@ Names, locations and identifiers in this repository are fictional. The example d
 python -m pip install -e .
 excel-ops examples/extracted-records.json output.xlsx
 ```
+
+See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [Connector contract](docs/connectors.md) for local and cloud spreadsheet behavior.
 
 ## Input format
 

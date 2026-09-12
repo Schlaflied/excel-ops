@@ -1,0 +1,4 @@
+interface:
+  display_name: "Excel Agent"
+  short_description: "在 Codex 中提取、整理、核对并交付表格"
+  default_prompt: "使用 $excel-agent，把我的图片或杂乱表格整理成经过验证、可以复跑的 Excel 交付。"

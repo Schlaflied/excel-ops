@@ -2,13 +2,25 @@
 
 中文 | [English](README.md)
 
-**把图片和杂乱表格，变成可核对、可复跑、可交付的 Excel 文件。**
+### 从图片和杂乱表格，到一份经过检查、可以复跑的数据交付
+
+Excel-Ops 是一套给 AI Agent 使用的对话式工作流，不是另一个表格网页应用。用户只需要把文件交给 Agent，并用大白话说明想要的结果；Agent 负责制定操作计划、调用本地或云端连接器、隔离不确定项、验证结果并打包交付。
 
 Excel-Ops 不是一个“帮你写公式”的 AI。它把表格工作视为一条完整的交付流程：
 
 **导入 → 提取 → 标准化 → 匹配 → 人工复核 → 写入 → 验证 → 交付**
 
 它与 [PPT-Ops](https://github.com/luochen211/ppt-ops) 是一对互补项目：PPT-Ops 把资料变成可以审查和交付的演示文稿；Excel-Ops 把图片和混乱的表格输入变成可以审查和交付的数据文件。
+
+## 在 Agent 中使用
+
+在 Codex 或其他兼容 Agent Skills 标准的 Agent 中调用：
+
+> 使用 `$excel-agent`，把这些截图中的记录提取出来；只有高置信度记录可以写入工作簿，其余内容放进人工复核表。
+
+`$excel-agent` 是唯一面向用户的入口。Python CLI 仍然保留，但它只是 Agent 和自动化测试调用的内部确定性能力，不要求用户自己选择 parser、connector 或命令。
+
+连接器优先级暂定为：本地 XLSX/CSV、本地云同步目录、Google Sheets、Dropbox API、飞书表格、WPS 云表格。云端凭据只存在于用户环境中，不得写进项目或交付包。
 
 ## 为什么要做 Excel-Ops
 
@@ -54,6 +66,8 @@ Excel-Ops 应当完成：
 python -m pip install -e .
 excel-ops examples/extracted-records.json output.xlsx
 ```
+
+完整对话与交付规则见[Agent 工作流](docs/agent-workflow.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.md)。
 
 输入示例：
 
