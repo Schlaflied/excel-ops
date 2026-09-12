@@ -93,12 +93,23 @@ Image-to-JSON adapters are deliberately separated from workbook writing. A futur
 
 ## Roadmap
 
-- Local OCR and vision-provider adapters
-- Natural-language joins between two workbooks
-- Duplicate and fuzzy-match review queues
-- Existing-template mapping and safe write-back
-- Re-runnable recipes and change logs
-- Formula and workbook integrity checks
+The detailed, acceptance-test-driven roadmap lives in [Roadmap issue #5](https://github.com/Schlaflied/excel-ops/issues/5):
+
+1. **Phase 1 — Local XLSX:** reliable local ingest, normalization, matching, review, template write-back, verification, and recipes.
+2. **Phase 2 — Cloud connectors:** the same workflow over synced folders, Google Sheets, Dropbox, Feishu, WPS, and later Microsoft Graph where demand justifies it.
+3. **Phase 3 — Prompt-to-analysis:** safe workbook joins, multi-tab delivery grouping, verified summaries/pivots, and repeatable automation.
+
+### Current Phase 1 implementation PRs
+
+| Capability | Issue | Pull request | Status |
+|---|---:|---:|---|
+| Multi-source, layout-aware ingestion | [#1](https://github.com/Schlaflied/excel-ops/issues/1) | [#29](https://github.com/Schlaflied/excel-ops/pull/29) | Open |
+| Type, unit, and locale inference | [#24](https://github.com/Schlaflied/excel-ops/issues/24) | [#28](https://github.com/Schlaflied/excel-ops/pull/28) | Open |
+| Schema-drift detection and mappings | [#10](https://github.com/Schlaflied/excel-ops/issues/10) | [#30](https://github.com/Schlaflied/excel-ops/pull/30) | Open; stacked on #28 |
+| Strict matching and deduplication | [#2](https://github.com/Schlaflied/excel-ops/issues/2) | [#27](https://github.com/Schlaflied/excel-ops/pull/27) | Open |
+| Offline human-review round trip | [#18](https://github.com/Schlaflied/excel-ops/issues/18) | [#31](https://github.com/Schlaflied/excel-ops/pull/31) | Open |
+
+These are review branches, not released capabilities. The next vertical-slice boundary is safe template write-back ([#3](https://github.com/Schlaflied/excel-ops/issues/3)) followed by independent delivery verification ([#4](https://github.com/Schlaflied/excel-ops/issues/4)).
 
 ## License
 
