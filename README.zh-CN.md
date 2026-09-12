@@ -103,12 +103,23 @@ excel-ops examples/extracted-records.json output.xlsx
 
 ## 路线图
 
-- 本地 OCR 与视觉模型适配器；
-- 两份工作簿之间的自然语言合并；
-- 重复项和模糊匹配人工复核队列；
-- 现有 Excel 模板识别与安全写回；
-- 可以重复执行的 recipe 与变更记录；
-- 公式、日期、记录数量与工作簿结构检查。
+包含验收标准的完整规划见 [Roadmap issue #5](https://github.com/Schlaflied/excel-ops/issues/5)：
+
+1. **Phase 1 — Local XLSX：**先完成可靠的本地导入、标准化、匹配、人工复核、模板写回、验证和 recipe。
+2. **Phase 2 — Cloud Connectors：**将同一工作流接到本地同步目录、Google Sheets、Dropbox、飞书、WPS；再按真实需求评估 Microsoft Graph。
+3. **Phase 3 — Prompt-to-Analysis：**支持安全的工作簿合并、多 Tab 交付分组、经过验证的汇总/透视表和周期性自动化。
+
+### v0.3.0 已合并的 Phase 1 基础能力
+
+| 能力 | Issue | Pull request | 状态 |
+|---|---:|---:|---|
+| 多来源、布局感知导入 | [#1](https://github.com/Schlaflied/excel-ops/issues/1) | [#29](https://github.com/Schlaflied/excel-ops/pull/29) | 已合并 |
+| 类型、单位和地区格式推断 | [#24](https://github.com/Schlaflied/excel-ops/issues/24) | [#28](https://github.com/Schlaflied/excel-ops/pull/28) | 已合并 |
+| Schema Drift 检测与映射 | [#10](https://github.com/Schlaflied/excel-ops/issues/10) | [#30](https://github.com/Schlaflied/excel-ops/pull/30) | 已合并 |
+| 严格匹配与去重 | [#2](https://github.com/Schlaflied/excel-ops/issues/2) | [#27](https://github.com/Schlaflied/excel-ops/pull/27) | 已合并 |
+| 离线人工复核闭环 | [#18](https://github.com/Schlaflied/excel-ops/issues/18) | [#31](https://github.com/Schlaflied/excel-ops/pull/31) | 已合并 |
+
+这些基础能力已经合入主分支并由仓库测试覆盖，但尚未完成整个 Phase 1 交付闭环。下一段纵向闭环是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），然后独立重新打开并验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
 
 ## License
 
