@@ -71,6 +71,8 @@ rather than silently converted.
 
 See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [Connector contract](docs/connectors.md) for local and cloud spreadsheet behavior.
 
+For comparing workbook structures before append, join, or write-back, see [Schema drift](docs/schema-drift.md).
+
 ## Input format
 
 ```json
