@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Excel-Ops logo" width="180">
+</p>
+
 # Excel-Ops
 
 [中文说明](README.zh-CN.md) | English
