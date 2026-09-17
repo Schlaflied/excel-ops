@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/logo.png" alt="Excel-Ops logo" width="180">
-</p>
-
 # Excel-Ops
 
 [中文说明](README.zh-CN.md) | English
@@ -10,7 +6,7 @@
 
 Excel-Ops is a conversation-driven workflow for AI agents, not another spreadsheet web app, and definitely not an AI formula generator. Give an agent the files and describe the outcome in plain language; the agent plans the operation, picks the right local or cloud connector, isolates whatever it isn't sure about, verifies the result, and hands back a delivery package — not a guess dressed up as an answer.
 
-The reason VLOOKUP is annoying was never the formula. It's that real spreadsheets have inconsistent names, duplicate records, shifting headers, and dates that don't agree with each other. Excel-Ops treats that mess as an operational workflow instead of pretending a single function can paper over it:
+The reason VLOOKUP is annoying was never the formula. It's that real spreadsheets have inconsistent names, duplicate records, shifting headers, and dates that don't agree with each other. This design comes from a real, recurring reporting workflow — reconciling messy multi-source records by hand, week after week — not a hypothetical use case dreamed up for a demo. Excel-Ops treats that mess as an operational workflow instead of pretending a single function can paper over it:
 
 **ingest → extract → normalize → match → human review → write → verify → deliver**
 
