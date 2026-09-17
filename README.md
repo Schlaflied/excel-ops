@@ -1,16 +1,20 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Excel-Ops logo" width="180">
+</p>
+
 # Excel-Ops
 
 [中文说明](README.zh-CN.md) | English
 
-### From images and messy tables to a checked, repeatable spreadsheet delivery
+### I hate VLOOKUP. This is why.
 
-Excel-Ops is a conversation-driven workflow for AI agents, not another spreadsheet web app. Give an agent the files and describe the outcome in plain language; the agent plans the operation, uses the appropriate local or cloud connector, isolates uncertainty, verifies the result, and returns a delivery package.
+Excel-Ops is a conversation-driven workflow for AI agents, not another spreadsheet web app, and definitely not an AI formula generator. Give an agent the files and describe the outcome in plain language; the agent plans the operation, picks the right local or cloud connector, isolates whatever it isn't sure about, verifies the result, and hands back a delivery package — not a guess dressed up as an answer.
 
-Excel-Ops is not an AI formula generator. It treats spreadsheets as an operational workflow:
+The reason VLOOKUP is annoying was never the formula. It's that real spreadsheets have inconsistent names, duplicate records, shifting headers, and dates that don't agree with each other. Excel-Ops treats that mess as an operational workflow instead of pretending a single function can paper over it:
 
 **ingest → extract → normalize → match → human review → write → verify → deliver**
 
-It is designed as a companion project to [PPT-Ops](https://github.com/luochen211/ppt-ops): PPT-Ops turns source material into a reviewable presentation delivery, while Excel-Ops turns images and messy tabular inputs into a reviewable data delivery.
+It's a companion project to [PPT-Ops](https://github.com/luochen211/ppt-ops): PPT-Ops turns source material into a reviewable presentation delivery, Excel-Ops turns images and messy tabular inputs into a reviewable data delivery.
 
 ## Use with an agent
 
@@ -24,21 +28,11 @@ The initial connector order is local XLSX/CSV, local cloud-sync folders, Google 
 
 The first vertical slice focuses on a common business task: ingest XLSX or CSV rows (or provider-neutral image extraction JSON), detect their layout, validate them against a declared schema, and write only accepted records into an Excel workbook. Uncertain records go to a separate review sheet instead of being silently guessed. XLSX sheet selection is content-based, and an unrecognized layout stops the run instead of producing partial output.
 
-## Why this exists
+## What the MVP actually does
 
-People rarely want a `VLOOKUP`. They want to connect records from two imperfect sources without losing data or hiding uncertainty. The hard part is not the formula; it is choosing a trustworthy key, handling duplicates, preserving provenance, and showing what did not match.
+Feed it provider-neutral extracted JSON from screenshots, scans, receipts, or forms, and it will keep the source image name and extraction confidence on every row, validate required fields, and split the result: accepted rows go to `Accepted`, anything low-confidence or incomplete goes to `Review` instead of getting silently guessed at, and an `Audit` sheet logs counts and processing metadata. Fuzzy matching never gets to make the final call on its own.
 
-## MVP contract
-
-- Accept provider-neutral extracted JSON from screenshots, scans, receipts, or forms.
-- Preserve the source image name and extraction confidence for every row.
-- Validate required fields before workbook output.
-- Route low-confidence or incomplete rows to `Review`.
-- Write accepted rows to `Accepted`.
-- Add an `Audit` sheet with counts and processing metadata.
-- Never use fuzzy matching as an invisible final decision.
-
-The repository intentionally does not include customer files, addresses, payroll records, credentials, or code copied from a private production workflow. The design was informed by a real recurring reporting pipeline, but all examples here are synthetic.
+None of the code or examples here came from a real production workflow — no customer files, addresses, payroll records, or credentials. The design was shaped by a real recurring reporting pipeline, but everything in this repo is synthetic.
 
 ## Synthetic field example
 
