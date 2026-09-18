@@ -127,6 +127,8 @@ def write_template(
     )
     if destination.resolve() == source:
         raise TemplateWriteError("output path must not overwrite the source template")
+    if destination.exists():
+        raise TemplateWriteError(f"output path already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
 

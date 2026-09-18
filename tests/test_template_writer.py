@@ -116,6 +116,11 @@ def test_rejects_source_overwrite_missing_sheet_and_row_overflow(tmp_path: Path)
 
     with pytest.raises(TemplateWriteError, match="must not overwrite"):
         write_template(template, [{"employee": "Ada"}], mapping, output_path=template)
+    existing = tmp_path / "existing.xlsx"
+    existing.write_bytes(b"preserve this delivery")
+    with pytest.raises(TemplateWriteError, match="already exists"):
+        write_template(template, [{"employee": "Ada"}], mapping, output_path=existing)
+    assert existing.read_bytes() == b"preserve this delivery"
     with pytest.raises(TemplateWriteError, match="exceeds"):
         write_template(
             template,
