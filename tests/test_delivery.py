@@ -15,7 +15,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 
-from excel_ops.ambiguity import decide, load_project_recipe, save_project_recipe
+from excel_ops.ambiguity import decide, group_ambiguities, load_project_recipe, save_project_recipe
 from excel_ops.delivery import (
     ACCEPTED,
     REJECTED,
@@ -24,13 +24,15 @@ from excel_ops.delivery import (
     WRITTEN,
     DeliveryPlanError,
     DeliveryTarget,
+    _ambiguities_from_matches,
     load_delivery_targets,
     plan_delivery,
     run_delivery,
 )
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
-from excel_ops.matching import Destination
+from excel_ops.matching import Destination, MatchCandidate, MatchResult
+from excel_ops.models import ExtractedRecord
 from excel_ops.template_writer import TemplateMapping
 
 
@@ -852,3 +854,71 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
     assert report["counts"][WRITTEN] == 2
     assert Path(report["delivery_paths"][0]).is_file()
     _assert_originals_untouched(scenario)
+
+
+# --------------------------------------------------------------------------- #
+# Finding 7: ambiguity keys must be stable across records sharing a shape
+# --------------------------------------------------------------------------- #
+
+
+def _fuzzy_record(location: str, identifier: str) -> ExtractedRecord:
+    return ExtractedRecord(
+        location=location,
+        event_date="2026-09-10",
+        identifier=identifier,
+        category="routine",
+        confidence=0.9,
+        source="synthetic",
+    )
+
+
+def _review_match(location: str, identifier: str) -> MatchResult:
+    """A 'review' match whose only difference from another is the source record.
+
+    Both records are fuzzily proposed for the same single candidate, so they
+    describe the *same kind* of open question ("is this a match for North?"),
+    even though each comes from a different source location. A stable
+    ambiguity key must merge them into one confirmation item instead of
+    minting a fresh key per record.
+    """
+
+    record = _fuzzy_record(location, identifier)
+    return MatchResult(
+        record_id=f"rec_{identifier}",
+        record=record,
+        status="review",
+        destination_key=None,
+        rule="fuzzy",
+        confidence=0.8,
+        candidates=(MatchCandidate(NORTH, NORTH, "fuzzy", 0.8),),
+    )
+
+
+def test_ambiguity_key_merges_records_sharing_the_same_shape():
+    matches = [
+        _review_match("北区仓库附近", "AS-101"),
+        _review_match("北区仓庫 (typo)", "AS-102"),
+        _review_match("Bei Qu Warehouse", "AS-103"),
+    ]
+
+    items, records_by_key = _ambiguities_from_matches(matches)
+
+    # _ambiguities_from_matches emits one Ambiguity per match (affected_count=1
+    # each); the merging happens downstream in group_ambiguities. What must be
+    # stable here is the *key* -- it must be identical across all three
+    # records' matches even though each record has its own location/identifier.
+    assert len(items) == 3
+    for item in items:
+        assert item.affected_count == 1  # per-match affected_count before grouping
+        assert item.candidates == (NORTH,)
+    keys = {item.key for item in items}
+    assert len(keys) == 1, f"expected one stable key across records, got {keys}"
+
+    # group_ambiguities (as build_confirmation_batch calls it) must then merge
+    # all three per-match ambiguities into a single confirmation item whose
+    # affected_count reflects all three records, instead of leaving three
+    # separate items that each demand their own confirmation.
+    merged = group_ambiguities(items)
+    assert len(merged) == 1
+    assert merged[0].affected_count == 3
+    assert set(records_by_key) == keys
