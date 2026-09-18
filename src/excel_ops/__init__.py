@@ -13,6 +13,16 @@ from .template_writer import (
     TemplateWriteResult,
     write_template,
 )
+from .delivery_verification import (
+    DeliveryContract,
+    DeliveryVerificationError,
+    DeliveryVerificationResult,
+    PeriodExpectation,
+    StageCounts,
+    VerificationFinding,
+    WorkbookVerifier,
+    verify_and_deliver,
+)
 from .pipeline import run_pipeline
 from .review_pack import (
     ReviewDecision,
@@ -60,5 +70,13 @@ __all__ = [
     "stable_record_id",
     "write_review_pack",
     "write_template",
+    "DeliveryContract",
+    "DeliveryVerificationError",
+    "DeliveryVerificationResult",
+    "PeriodExpectation",
+    "StageCounts",
+    "VerificationFinding",
+    "WorkbookVerifier",
+    "verify_and_deliver",
     "verify_output_name",
 ]
