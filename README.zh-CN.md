@@ -72,7 +72,9 @@ excel-ops examples/extracted-records.json output.xlsx
 交付文件会包含 `Type Inference` 工作表，JSON 结果也会给出字段级置信度和歧义计数。
 数字形状的标识符和前导零会保留为文本；歧义日期进入复核，不会被静默转换。
 
-完整对话与交付规则见[Agent 工作流](docs/agent-workflow.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.md)。
+完整对话与交付规则见[Agent 工作流](docs/agent-workflow.zh-CN.md)，本地和云端表格的统一行为见[连接器合同](docs/connectors.zh-CN.md)。
+
+在执行 append、join 或写回之前比较工作簿结构，见 [Schema Drift 检查](docs/schema-drift.zh-CN.md)。
 
 输入示例：
 
@@ -109,17 +111,13 @@ excel-ops examples/extracted-records.json output.xlsx
 2. **Phase 2 — Cloud Connectors：**将同一工作流接到本地同步目录、Google Sheets、Dropbox、飞书、WPS；再按真实需求评估 Microsoft Graph。
 3. **Phase 3 — Prompt-to-Analysis：**支持安全的工作簿合并、多 Tab 交付分组、经过验证的汇总/透视表和周期性自动化。
 
-### v0.3.0 已合并的 Phase 1 基础能力
+## 当前能力
 
-| 能力 | Issue | Pull request | 状态 |
-|---|---:|---:|---|
-| 多来源、布局感知导入 | [#1](https://github.com/Schlaflied/excel-ops/issues/1) | [#29](https://github.com/Schlaflied/excel-ops/pull/29) | 已合并 |
-| 类型、单位和地区格式推断 | [#24](https://github.com/Schlaflied/excel-ops/issues/24) | [#28](https://github.com/Schlaflied/excel-ops/pull/28) | 已合并 |
-| Schema Drift 检测与映射 | [#10](https://github.com/Schlaflied/excel-ops/issues/10) | [#30](https://github.com/Schlaflied/excel-ops/pull/30) | 已合并 |
-| 严格匹配与去重 | [#2](https://github.com/Schlaflied/excel-ops/issues/2) | [#27](https://github.com/Schlaflied/excel-ops/pull/27) | 已合并 |
-| 离线人工复核闭环 | [#18](https://github.com/Schlaflied/excel-ops/issues/18) | [#31](https://github.com/Schlaflied/excel-ops/pull/31) | 已合并 |
+v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift、严格匹配和离线人工复核。`main` 还新增了业务周期解析、周期感知日期刷新和安全文件命名；这三项尚未进入新的 Release。
 
-这些基础能力已经合入主分支并由仓库测试覆盖，但尚未完成整个 Phase 1 交付闭环。下一段纵向闭环是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），然后独立重新打开并验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
+[查看完整能力、实现状态、安全边界与对应 Issue/PR](docs/capabilities.zh-CN.md)。
+
+下一段纵向闭环是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），然后独立重新打开并验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
 
 ## License
 
