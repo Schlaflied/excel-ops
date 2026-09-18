@@ -12,6 +12,22 @@ from .ambiguity import (
     review_rows_from_ambiguities,
     save_project_recipe,
 )
+from .delivery import (
+    AmbiguityOutcome,
+    DeliveryFailure,
+    DeliveryPlan,
+    DeliveryPlanError,
+    DeliveryRun,
+    DeliveryTarget,
+    PlannedTarget,
+    RecordOutcome,
+    SourceTrace,
+    TargetOutcome,
+    WrittenCell,
+    load_delivery_targets,
+    plan_delivery,
+    run_delivery,
+)
 from .inference import FieldInference, ValueInference, infer_fields, infer_value
 from .matching import Destination, MatchCandidate, MatchResult, preallocate_records, stable_record_id
 from .period_refresh import DateRole, DateSlot, RefreshChange, RefreshResult, SlotTarget, refresh_workbook_period
@@ -54,9 +70,23 @@ from .review_pack import (
 
 __all__ = [
     "Ambiguity",
+    "AmbiguityOutcome",
     "ConfirmationBatch",
     "ConfirmationItem",
+    "DeliveryFailure",
+    "DeliveryPlan",
+    "DeliveryPlanError",
+    "DeliveryRun",
+    "DeliveryTarget",
     "Destination",
+    "PlannedTarget",
+    "RecordOutcome",
+    "SourceTrace",
+    "TargetOutcome",
+    "WrittenCell",
+    "load_delivery_targets",
+    "plan_delivery",
+    "run_delivery",
     "DateRole",
     "DateSlot",
     "AmbiguousPeriodError",
