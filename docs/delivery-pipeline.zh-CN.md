@@ -121,7 +121,7 @@ excel-ops deliver delivery-plan.json --recipe recipes/project-recipe.json --resu
 }
 ```
 
-未交付或出现失败时，命令以非零状态退出。
+`--dry-run` 成功时始终以状态 0 退出，即使 `delivered` 为 `false`（dry-run 本就不会交付，这不是失败）。非 dry-run 的真实运行仅在出现失败，或运行结束后仍未交付时，才以非零状态退出。
 
 ## 失败码
 

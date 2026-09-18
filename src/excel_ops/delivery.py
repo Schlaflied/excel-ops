@@ -903,18 +903,26 @@ def _build_plan(
         skipped = [item for item in accepted if item.record_id in known]
         blockers = _target_blockers(target)
         blocking.extend(blockers)
+        writable_rows = len(accepted) - len(skipped)
+        protected_cells, protected_rows = _predicted_protected_cells(
+            template, target, writable_rows
+        )
         planned.append(
             PlannedTarget(
-                target.key,
-                str(template),
-                target.mapping.sheet,
-                dict(target.mapping.field_columns),
-                str(_unique_path(staging / f"{template.stem}-{target.key}{template.suffix}")),
-                str(delivery_path),
-                len(accepted) - len(skipped),
-                len(withheld),
-                len(skipped),
-                tuple(blockers),
+                destination_key=target.key,
+                template_path=str(template),
+                sheet=target.mapping.sheet,
+                field_mapping=dict(target.mapping.field_columns),
+                staged_path=str(
+                    _unique_path(staging / f"{template.stem}-{target.key}{template.suffix}")
+                ),
+                delivery_path=str(delivery_path),
+                expected_written=writable_rows - protected_rows,
+                expected_review=len(withheld),
+                expected_skipped_existing=len(skipped),
+                expected_skipped_protected=protected_rows,
+                protected_cells=protected_cells,
+                blocking_items=tuple(blockers),
             )
         )
     unresolved = batch.unresolved_blockers

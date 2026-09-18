@@ -694,6 +694,65 @@ def test_a_protected_cell_blocks_delivery_instead_of_writing_part_of_a_row(tmp_p
     _assert_originals_untouched(scenario)
 
 
+def test_plan_predicts_protected_cells_and_excludes_them_from_expected_written(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    protected = scenario["north"]
+    workbook = load_workbook(protected)
+    try:
+        workbook["北区"]["C5"] = "=TODAY()"
+        workbook.save(protected)
+    finally:
+        workbook.close()
+    scenario["before"][protected] = protected.read_bytes()
+
+    plan_run = plan_delivery(
+        scenario["inputs"],
+        scenario["targets"],
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+    )
+
+    planned = {item.destination_key: item for item in plan_run.plan.targets}
+    north = planned[NORTH]
+    # Without the fix, expected_written stayed at 2 and protected_cells stayed
+    # empty because `_predicted_protected_cells` was never called.
+    assert north.protected_cells == ("C5",)
+    assert north.expected_skipped_protected == 1
+    assert north.expected_written == 1
+    _assert_originals_untouched(scenario)
+
+
+def test_planned_target_blocking_items_are_populated_when_blockers_exist(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    broken = DeliveryTarget(
+        destination=Destination(NORTH, (NORTH,)),
+        template_path=scenario["north"],
+        mapping=TemplateMapping(
+            sheet="北区",
+            header_row=4,
+            data_start_row=5,
+            field_columns={"record_id": "A", "employee_salary": "B"},
+        ),
+        required_fields=("record_id", "employee_salary"),
+    )
+
+    plan_run = plan_delivery(
+        scenario["inputs"],
+        [broken],
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+    )
+
+    north = next(item for item in plan_run.plan.targets if item.destination_key == NORTH)
+    # Without the fix, `tuple(blockers)` was positionally assigned to
+    # `expected_skipped_protected`, leaving `blocking_items` empty here even
+    # though real blockers exist for this target.
+    assert north.blocking_items != ()
+    assert any("unmapped_contract_field:employee_salary" in item for item in north.blocking_items)
+    assert isinstance(north.expected_skipped_protected, int)
+    _assert_originals_untouched(scenario)
+
+
 def test_a_corrupted_staging_file_is_never_delivered(tmp_path: Path):
     scenario = _scenario(tmp_path)
 

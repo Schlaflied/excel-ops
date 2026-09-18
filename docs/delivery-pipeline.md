@@ -143,7 +143,7 @@ configuration file:
 }
 ```
 
-The command exits non-zero when the run did not deliver or produced failures.
+A successful `--dry-run` always exits with status 0, even when `delivered` is `false` (a dry-run never delivers by design, so that's not a failure). A real (non-dry-run) run exits non-zero only when it produced failures, or when it ends up undelivered.
 
 ## Failure codes
 
