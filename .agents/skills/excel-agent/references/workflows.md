@@ -22,6 +22,15 @@ Snapshot the target, map only authorized ranges, preserve formulas and formattin
 
 Detect the input layout, normalize records, preassign each accepted record to exactly one destination, write using a declared template mapping, update zero-record periods, verify actual output files, and move only passing artifacts into delivery.
 
+For declared local workbook templates this whole loop is one deterministic call. Run the plan first, read its counts and blocking items back to the user, then run the delivery and report the verified result:
+
+```bash
+excel-ops deliver delivery-plan.json --dry-run
+excel-ops deliver delivery-plan.json --recipe recipes/project-recipe.json --result run.json
+```
+
+Equivalent in Python: `excel_ops.run_delivery(inputs, targets, staging_dir=..., delivery_dir=...)`. Treat `delivered: false`, any `failures[]` entry, and any record in `review` or `rejected` as items to explain, never to work around. See `docs/delivery-pipeline.md` for the target declaration and failure codes.
+
 ## Analyze or summarize
 
 Keep source data separate from calculations and outputs. Explain the metric definition and source range. Do not build a dashboard when a compact table or spreadsheet result answers the question.

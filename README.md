@@ -63,6 +63,15 @@ and the JSON result exposes field-level confidence and ambiguity counts. Numeric
 identifiers and leading zeroes remain text; ambiguous dates are sent to review
 rather than silently converted.
 
+For the integrated ingest-to-verified-delivery run against declared workbook templates:
+
+```bash
+excel-ops deliver delivery-plan.json --dry-run   # the checkable plan, no file touched
+excel-ops deliver delivery-plan.json             # write a staging copy, verify it, then deliver
+```
+
+See [End-to-end delivery pipeline](docs/delivery-pipeline.md) for the target declaration, the plan contract, the failure codes, and what is deliberately left out.
+
 See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [Connector contract](docs/connectors.md) for local and cloud spreadsheet behavior.
 
 See [Batch ambiguity confirmation and Recipes](docs/ambiguity-recipes.md) for grouped decisions, run/project scopes, and conflict handling.
@@ -108,11 +117,15 @@ The detailed, acceptance-test-driven roadmap lives in [Roadmap issue #5](https:/
 
 ## Current capabilities
 
-v0.3.0 released multi-source ingestion, type and locale inference, schema-drift detection, strict matching, and an offline human-review round trip. `main` also contains business-period resolution, period-aware date refresh, and safe output naming; those three capabilities are not yet part of a newer release.
+v0.3.0 released multi-source ingestion, type and locale inference, schema-drift detection, strict matching, and an offline human-review round trip.
+
+`main` additionally contains, **merged but not part of any newer Release**: business-period resolution, period-aware date refresh, safe output naming, batch ambiguity confirmation and project Recipes, safe template write-back, independent delivery verification, static formula integrity checks, and — closing the gap those modules left open — the integrated `run_delivery(...)` pipeline that chains them into one verified Phase 1 delivery run ([#46](https://github.com/Schlaflied/excel-ops/issues/46), [docs](docs/delivery-pipeline.md)).
+
+Merged modules, repository tests, and a verified persisted file are separate kinds of evidence from a tagged Release. Nothing after v0.3.0 has been released.
 
 [See the complete capability ledger, implementation status, safety boundaries, and linked issues/PRs](docs/capabilities.md).
 
-These foundations do not yet complete the full Phase 1 delivery loop. The next vertical-slice boundary is safe template write-back ([#3](https://github.com/Schlaflied/excel-ops/issues/3)) followed by independent delivery verification ([#4](https://github.com/Schlaflied/excel-ops/issues/4)).
+Still out of scope on `main`: full cross-run idempotency fingerprinting ([#19](https://github.com/Schlaflied/excel-ops/issues/19)), source and verification Manifests ([#20](https://github.com/Schlaflied/excel-ops/issues/20)), currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23)), multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)), and every cloud connector.
 
 ## License
 

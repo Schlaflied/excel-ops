@@ -78,25 +78,61 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Safety boundary:** the module does not read the system's current date; naming dates must come from the resolved upstream business period.
 - **Implementation:** [Issue #17](https://github.com/Schlaflied/excel-ops/issues/17) / [PR #35](https://github.com/Schlaflied/excel-ops/pull/35)
 
+### 9. Batch ambiguity confirmation and project Recipes
+
+- **What it does:** groups repeated field-level questions into one confirmation batch and reuses saved decisions in `this-run` or `project` scope.
+- **Output and evidence:** each item carries its status, selected value, decision provenance, and affected count; project decisions persist as a versioned Recipe file.
+- **Safety boundary:** `unknown` and conflicting decisions block delivery instead of being applied; changed candidates invalidate a saved decision rather than silently reusing it.
+- **Implementation:** [Issue #26](https://github.com/Schlaflied/excel-ops/issues/26) / [PR #41](https://github.com/Schlaflied/excel-ops/pull/41) / [Detailed guide](ambiguity-recipes.md)
+
+### 10. Safe write-back into an existing template
+
+- **What it does:** copies an enterprise template and changes only the cells a declared `TemplateMapping` authorizes.
+- **Output and evidence:** returns the actual written path plus a JSON change log of every previous and new value, and every skipped cell with its reason.
+- **Safety boundary:** the source template is never modified, an existing output is never overwritten, and formulas and non-anchor merged cells are skipped rather than replaced; formatting comes from a declared style row.
+- **Implementation:** [Issue #3](https://github.com/Schlaflied/excel-ops/issues/3) / [PR #40](https://github.com/Schlaflied/excel-ops/pull/40)
+
+### 11. Independent verification of the delivered file
+
+- **What it does:** reopens the writer's real output, and then the published copy, and checks sheets, headers, required fields, record IDs, written values, and declared period slots.
+- **Output and evidence:** writes a machine-readable verification report with a finding code, message, suggestion, and location for every problem.
+- **Safety boundary:** fail-closed — unknown finding severities block delivery, staged and delivery paths must differ, and a failed run publishes nothing.
+- **Implementation:** [Issue #4](https://github.com/Schlaflied/excel-ops/issues/4) / [PR #42](https://github.com/Schlaflied/excel-ops/pull/42)
+
+### 12. Static formula integrity checks
+
+- **What it does:** scans formula text for errors, external references, broken references, missing sheets, invalid ranges, unsupported dynamic arrays, and circular references; verifies declared formula regions and reconciles declared summaries.
+- **Output and evidence:** returns findings usable as a delivery verifier.
+- **Safety boundary:** openpyxl cannot calculate formulas, so recalculation is reported as an explicit `recalculation_not_verified` warning and cached values are never treated as proof.
+- **Implementation:** [Issue #11](https://github.com/Schlaflied/excel-ops/issues/11) / [PR #43](https://github.com/Schlaflied/excel-ops/pull/43)
+
+### 13. Integrated end-to-end delivery run
+
+- **What it does:** `run_delivery(...)` chains ingestion, the data contract, strict matching, ambiguity confirmation and Recipes, a checkable plan or dry run, staged template write-back, independent verification, and optional formula checks into one agent-callable run, also exposed as `excel-ops deliver`.
+- **Output and evidence:** one JSON-serializable result with per-record terminal state, stable record IDs, source provenance for every delivered cell, per-target actual delivery paths, verification findings, and failure codes; covered by a synthetic end-to-end fixture with two input layouts, an image-extraction JSON, and two templates.
+- **Safety boundary:** a save is never reported as a delivery — only a target whose reopened file passed verification is published; unresolved ambiguities, conflicts, and duplicates never reach accepted; a skipped mapped cell fails the run closed instead of delivering a partial row; inputs and templates stay unmodified.
+- **Implementation:** [Issue #46](https://github.com/Schlaflied/excel-ops/issues/46) / [Detailed guide](delivery-pipeline.md)
+
 ## What can currently be composed
 
-The current modules cover:
+The current modules cover the full Phase 1 local loop:
 
 ```text
-ingest → normalize/type inference → schema check → strict match → human review
+ingest → normalize/type inference → schema check → strict match → ambiguity/Recipe
+       → plan/dry run → staged template write → independent verification → delivery
                                   period resolution → date refresh → safe naming
 ```
 
-These capabilities have explicit data contracts and tests, but the full `write → verify → deliver` vertical slice is not yet complete. Excel Ops therefore cannot yet claim unattended end-to-end delivery into arbitrary enterprise templates.
+This loop is exercised end to end against synthetic fixtures and judged by the reopened delivery file. It is still not part of a tagged Release, and it only covers declared local workbook templates.
 
 ## Not implemented or not yet complete end to end
 
-- [Issue #3](https://github.com/Schlaflied/excel-ops/issues/3): safe write-back into an existing enterprise workbook template;
-- [Issue #4](https://github.com/Schlaflied/excel-ops/issues/4): reopen and independently verify the actual delivery artifact;
-- formula integrity, item-level reconciliation, source manifests, and complete recipes;
+- [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19): complete cross-run idempotency. The integrated run does not append records a target already holds, but it does not yet fingerprint changed values for delivered records, renamed or moved deliveries, or interrupted runs;
+- [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) source and verification Manifests, [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) currency and precision rules, and [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
+- recalculated-formula proof, which requires Excel or LibreOffice rather than openpyxl;
 - local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;
 - prompt-driven append, join, multi-tab delivery grouping, summaries, and pivot tables;
-- a full synthetic end-to-end fixture for `ingest → normalize → match → review → write → verify → deliver`.
+- cross-source fact checking and regional rule calculations.
 
 ## Maintenance rules
 
