@@ -1,5 +1,17 @@
 """Excel-Ops public package."""
 
+from .ambiguity import (
+    Ambiguity,
+    ConfirmationBatch,
+    ConfirmationItem,
+    RecipeDecision,
+    build_confirmation_batch,
+    decide,
+    group_ambiguities,
+    load_project_recipe,
+    review_rows_from_ambiguities,
+    save_project_recipe,
+)
 from .inference import FieldInference, ValueInference, infer_fields, infer_value
 from .matching import Destination, MatchCandidate, MatchResult, preallocate_records, stable_record_id
 from .period_refresh import DateRole, DateSlot, RefreshChange, RefreshResult, SlotTarget, refresh_workbook_period
@@ -41,6 +53,9 @@ from .review_pack import (
 )
 
 __all__ = [
+    "Ambiguity",
+    "ConfirmationBatch",
+    "ConfirmationItem",
     "Destination",
     "DateRole",
     "DateSlot",
@@ -54,6 +69,7 @@ __all__ = [
     "ReviewHistoryEntry",
     "ReviewImportResult",
     "ReviewPackRow",
+    "RecipeDecision",
     "RefreshChange",
     "RefreshResult",
     "SlotTarget",
@@ -64,15 +80,21 @@ __all__ = [
     "TemplateWriteError",
     "TemplateWriteResult",
     "ValueInference",
+    "build_confirmation_batch",
+    "decide",
+    "group_ambiguities",
     "import_review_pack",
     "infer_fields",
     "infer_value",
+    "load_project_recipe",
     "preallocate_records",
     "refresh_workbook_period",
     "resolve_period",
     "review_rows_from_match_results",
+    "review_rows_from_ambiguities",
     "resolve_output_path",
     "run_pipeline",
+    "save_project_recipe",
     "stable_record_id",
     "write_review_pack",
     "write_template",
