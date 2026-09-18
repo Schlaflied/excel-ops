@@ -41,6 +41,7 @@ class VerificationFinding:
     row: int | None = None
     field: str | None = None
     cell: str | None = None
+    severity: str = "error"
 
 
 class WorkbookVerifier(Protocol):
@@ -105,7 +106,7 @@ def verify_and_deliver(
     destination = Path(delivery_path).resolve()
     report = Path(report_path).resolve() if report_path else staged.with_suffix(staged.suffix + ".verification.json")
     findings = _verify(staged, write_result, contract)
-    if findings:
+    if _has_blocking_findings(findings):
         result = DeliveryVerificationResult(staged, None, report, False, contract.counts, tuple(findings))
         _write_report(result)
         raise DeliveryVerificationError(result)
@@ -127,7 +128,7 @@ def verify_and_deliver(
         shutil.copy2(staged, temporary)
         # Verify the persisted copy, not only the writer's staging artifact.
         delivery_findings = _verify(temporary, write_result, contract)
-        if delivery_findings:
+        if _has_blocking_findings(delivery_findings):
             result = DeliveryVerificationResult(staged, None, report, False, contract.counts, tuple(delivery_findings))
             _write_report(result)
             raise DeliveryVerificationError(result)
@@ -135,7 +136,7 @@ def verify_and_deliver(
     finally:
         temporary.unlink(missing_ok=True)
 
-    result = DeliveryVerificationResult(staged, destination, report, True, contract.counts)
+    result = DeliveryVerificationResult(staged, destination, report, True, contract.counts, tuple(delivery_findings))
     _write_report(result)
     return result
 
@@ -241,6 +242,11 @@ def _same_value(left: Any, right: Any) -> bool:
     if isinstance(right, datetime) and isinstance(left, date) and not isinstance(left, datetime):
         return right.date() == left
     return left == right
+
+
+def _has_blocking_findings(findings: Iterable[VerificationFinding]) -> bool:
+    # Unknown severities fail closed; only an explicit warning is non-blocking.
+    return any(item.severity != "warning" for item in findings)
 
 
 def _column_number(value: str | int) -> int:
