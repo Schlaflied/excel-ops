@@ -7,6 +7,8 @@ description: Extract, clean, join, update, verify, and deliver Excel, CSV, cloud
 
 The conversation is the product interface. `$excel-agent` is the only user-facing entry point; do not ask the user to choose a parser, formula, connector, library, mode, or CLI command.
 
+If a user asks whether this local checkout has a newer system snapshot, the agent may run `node refresh.mjs check` or `node refresh.mjs preview` and explain the result. These commands are read-only. Do not run an update or treat a network failure as a blocker for spreadsheet work.
+
 ## Complete one request
 
 1. Read `references/shared.md`.
