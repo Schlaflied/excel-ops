@@ -15,6 +15,17 @@ def run_pipeline(
     confidence_threshold: float = 0.85,
     locale: str | None = None,
 ) -> dict[str, Any]:
+    """Single-file extract -> infer -> review -> write -> verify quick start.
+
+    This is the original, minimal entry point (still used by the CLI, the
+    quick-start in README.md, and covered by tests/test_pipeline.py and
+    tests/test_schema_drift.py) and is intentionally kept rather than retired.
+    For the full multi-input, multi-target, ambiguity-aware delivery flow with
+    staged writes and independent post-write verification, use
+    :func:`excel_ops.delivery.run_delivery` instead -- see
+    docs/delivery-pipeline.md.
+    """
+
     extracted = load_input_records(input_path)
     field_inferences = infer_fields(
         [
