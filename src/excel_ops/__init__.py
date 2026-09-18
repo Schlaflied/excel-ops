@@ -17,6 +17,30 @@ from .matching import Destination, MatchCandidate, MatchResult, preallocate_reco
 from .period_refresh import DateRole, DateSlot, RefreshChange, RefreshResult, SlotTarget, refresh_workbook_period
 from .periods import AmbiguousPeriodError, PeriodResolutionError, PeriodResult, resolve_period
 from .naming import ResolvedOutput, resolve_output_path, verify_output_name
+from .template_writer import (
+    TemplateChange,
+    TemplateMapping,
+    TemplateSkip,
+    TemplateWriteError,
+    TemplateWriteResult,
+    write_template,
+)
+from .delivery_verification import (
+    DeliveryContract,
+    DeliveryVerificationError,
+    DeliveryVerificationResult,
+    PeriodExpectation,
+    StageCounts,
+    VerificationFinding,
+    WorkbookVerifier,
+    verify_and_deliver,
+)
+from .formula_verification import (
+    ExpectedErrorMarker,
+    FormulaRegion,
+    FormulaVerifier,
+    SummaryReconciliation,
+)
 from .pipeline import run_pipeline
 from .review_pack import (
     ReviewDecision,
@@ -50,6 +74,11 @@ __all__ = [
     "RefreshResult",
     "SlotTarget",
     "ResolvedOutput",
+    "TemplateChange",
+    "TemplateMapping",
+    "TemplateSkip",
+    "TemplateWriteError",
+    "TemplateWriteResult",
     "ValueInference",
     "build_confirmation_batch",
     "decide",
@@ -68,5 +97,18 @@ __all__ = [
     "save_project_recipe",
     "stable_record_id",
     "write_review_pack",
+    "write_template",
+    "DeliveryContract",
+    "DeliveryVerificationError",
+    "DeliveryVerificationResult",
+    "PeriodExpectation",
+    "StageCounts",
+    "VerificationFinding",
+    "WorkbookVerifier",
+    "verify_and_deliver",
+    "ExpectedErrorMarker",
+    "FormulaRegion",
+    "FormulaVerifier",
+    "SummaryReconciliation",
     "verify_output_name",
 ]
