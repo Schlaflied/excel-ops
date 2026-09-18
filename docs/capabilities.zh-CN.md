@@ -78,25 +78,61 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 - **安全边界**：不读取系统当天日期；命名日期必须来自上游已经解析的业务周期。
 - **实现**：[Issue #17](https://github.com/Schlaflied/excel-ops/issues/17) / [PR #35](https://github.com/Schlaflied/excel-ops/pull/35)
 
+### 9. 批量歧义确认与项目 Recipe
+
+- **能做什么**：把重复出现的字段级问题合并为一个确认批次，并按 `this-run` 或 `project` 作用域复用已保存的决定。
+- **输出与证据**：每个条目携带状态、选定值、决定来源和影响数量；项目级决定持久化为带格式版本的 Recipe 文件。
+- **安全边界**：`unknown` 和冲突的决定会阻断交付，而不是被套用；候选发生变化时，已保存的决定失效而不会被静默复用。
+- **实现**：[Issue #26](https://github.com/Schlaflied/excel-ops/issues/26) / [PR #41](https://github.com/Schlaflied/excel-ops/pull/41) / [详细指南](ambiguity-recipes.zh-CN.md)
+
+### 10. 安全写回现有模板
+
+- **能做什么**：复制企业模板，只修改声明的 `TemplateMapping` 授权的单元格。
+- **输出与证据**：返回实际写入路径，并生成记录每个原值/新值与每个跳过项及原因的 JSON 变更日志。
+- **安全边界**：源模板永不被修改，已存在的输出永不被覆盖，公式和非锚点合并单元格被跳过而不是替换；格式来自声明的样式行。
+- **实现**：[Issue #3](https://github.com/Schlaflied/excel-ops/issues/3) / [PR #40](https://github.com/Schlaflied/excel-ops/pull/40)
+
+### 11. 独立验证交付文件
+
+- **能做什么**：重新打开写入器的实际输出、再打开即将发布的副本，核对工作表、表头、必填字段、record ID、写入值和声明的周期槽位。
+- **输出与证据**：生成机器可读验证报告，每个问题都带 finding 代码、说明、建议和位置。
+- **安全边界**：失败关闭——未知严重级别一律阻断交付，staging 与交付路径必须不同，验证失败时不发布任何文件。
+- **实现**：[Issue #4](https://github.com/Schlaflied/excel-ops/issues/4) / [PR #42](https://github.com/Schlaflied/excel-ops/pull/42)
+
+### 12. 静态公式完整性检查
+
+- **能做什么**：扫描公式文本中的错误值、外部引用、断裂引用、缺失工作表、非法区域、不支持的动态数组和循环引用；校验声明的公式区域并独立对账声明的汇总值。
+- **输出与证据**：返回可直接作为交付验证器使用的 findings。
+- **安全边界**：openpyxl 不做公式计算，因此重算能力以 `recalculation_not_verified` 警告显式说明，缓存值不被当作证据。
+- **实现**：[Issue #11](https://github.com/Schlaflied/excel-ops/issues/11) / [PR #43](https://github.com/Schlaflied/excel-ops/pull/43)
+
+### 13. 集成端到端交付运行
+
+- **能做什么**：`run_delivery(...)` 把导入、数据合同、严格匹配、歧义确认与 Recipe、可检查计划/dry run、staging 模板写回、独立验证和可选公式检查串成一次可由 Agent 调用的运行，并通过 `excel-ops deliver` 暴露。
+- **输出与证据**：一个可 JSON 序列化的结果，包含每条记录的终态、稳定 record ID、每个交付单元格的来源、各目标的实际交付路径、验证 findings 和失败码；由包含两种输入布局、一个图片提取 JSON 和两个模板的合成 fixture 端到端覆盖。
+- **安全边界**：保存永不被当作交付——只有重新打开并通过验证的目标才会发布；未解决的歧义、冲突和重复记录不会进入 Accepted；被跳过的已映射单元格会让运行失败关闭，而不是交付半行数据；输入与模板保持不变。
+- **实现**：[Issue #46](https://github.com/Schlaflied/excel-ops/issues/46) / [详细指南](delivery-pipeline.zh-CN.md)
+
 ## 当前可以组合到什么程度
 
-当前模块已经覆盖：
+当前模块已经覆盖 Phase 1 本地闭环的全部环节：
 
 ```text
-ingest → normalize/type inference → schema check → strict match → human review
+ingest → normalize/type inference → schema check → strict match → ambiguity/Recipe
+       → plan/dry run → staged template write → independent verification → delivery
                                   period resolution → date refresh → safe naming
 ```
 
-这些能力有明确的数据结构和测试，但完整的 `write → verify → deliver` 纵向闭环仍未完成。因此，当前不能声称 Excel Ops 已经可以把任意企业模板端到端无人值守交付。
+该闭环已用合成 fixture 端到端跑通，并以重新打开的交付文件为判据。但它仍未进入任何已发布 Release，且只覆盖已声明的本地工作簿模板。
 
 ## 尚未实现或尚未形成完整闭环
 
-- [Issue #3](https://github.com/Schlaflied/excel-ops/issues/3)：安全写回现有企业工作簿模板；
-- [Issue #4](https://github.com/Schlaflied/excel-ops/issues/4)：重新打开并独立验证实际交付文件；
-- 公式完整性、逐项对账、来源 manifest 和完整 recipe；
+- [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19)：完整跨运行幂等。集成运行不会向目标追加它已包含的记录，但尚不能对已交付记录的值变化、被改名或移动的交付文件以及中断的运行做指纹识别；
+- [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) 来源与验证 Manifest、[Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) 币种与精度、[Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
+- 公式重算证据，需要 Excel 或 LibreOffice，openpyxl 无法提供；
 - 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；
 - Prompt 驱动的 append、join、多 Tab delivery grouping、汇总和透视表；
-- 完整合成数据端到端 fixture：`ingest → normalize → match → review → write → verify → deliver`。
+- 跨来源事实判断与地区法规计算。
 
 ## 维护规则
 

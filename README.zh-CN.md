@@ -59,6 +59,15 @@ excel-ops examples/extracted-records.json output.xlsx
 
 如果已知日期顺序或小数分隔符，可传入 `--locale en-US`（或其他明确的地区提示）。交付文件包含 `Type Inference` 工作表，JSON 结果提供字段级置信度和歧义计数。数字形状的标识符和前导零会保留为文本；歧义日期进入复核，不会被静默转换。
 
+按声明的工作簿模板跑完整的“导入 → 验证 → 交付”闭环：
+
+```bash
+excel-ops deliver delivery-plan.json --dry-run   # 只给出可检查的计划，不触碰任何文件
+excel-ops deliver delivery-plan.json             # 写入 staging 副本，验证后才交付
+```
+
+目标声明、计划合同、失败码以及刻意不做的部分见[端到端交付流程](docs/delivery-pipeline.zh-CN.md)。
+
 对话约定见 [Agent 工作流](docs/agent-workflow.zh-CN.md)；本地和云端表格的行为见[连接器合同](docs/connectors.zh-CN.md)。
 
 字段级批量确认、本次运行/项目作用域和冲突重确认见[批量歧义确认与 Recipe](docs/ambiguity-recipes.zh-CN.md)。
@@ -104,11 +113,15 @@ excel-ops examples/extracted-records.json output.xlsx
 
 ## 当前能力
 
-v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift 检查、严格匹配和离线人工复核流程。`main` 还包含业务周期解析、周期感知日期刷新和安全文件命名；这三项尚未进入更新的 Release。
+v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift 检查、严格匹配和离线人工复核流程。
+
+`main` 另外包含以下**已合并但尚未进入任何更新 Release**的能力：业务周期解析、周期感知日期刷新、安全文件命名、批量歧义确认与项目 Recipe、安全模板写回、独立交付验证、静态公式完整性检查，以及把它们串成一次可验证 Phase 1 交付运行的集成入口 `run_delivery(...)`（[#46](https://github.com/Schlaflied/excel-ops/issues/46)，[文档](docs/delivery-pipeline.zh-CN.md)）。
+
+“模块已合并”“仓库测试通过”“落盘文件已验证”和“已发布 Release”是四种不同的证据。v0.3.0 之后的内容都还没有发布。
 
 [查看完整能力清单、实现状态、安全边界以及对应的 Issue/PR](docs/capabilities.zh-CN.md)。
 
-这些基础能力尚未完成 Phase 1 的完整交付闭环。下一项垂直切片工作是安全写回现有模板（[#3](https://github.com/Schlaflied/excel-ops/issues/3)），随后是独立验证交付文件（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）。
+`main` 上仍不在范围内：完整跨运行指纹幂等（[#19](https://github.com/Schlaflied/excel-ops/issues/19)）、来源与验证 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、币种与精度（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)），以及全部云端连接器。
 
 ## 许可证
 

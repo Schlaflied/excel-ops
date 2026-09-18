@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from openpyxl import load_workbook
-from openpyxl.cell.cell import MergedCell
-from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils import get_column_letter
 
+from .cells import column_number, is_merged_non_anchor, is_protected_formula_value
 from .naming import ResolvedOutput, resolve_output_path
 
 
@@ -161,10 +161,10 @@ def write_template(
                 skipped.append(TemplateSkip(record_index, field_name, "missing_field", coordinate))
                 continue
             cell = worksheet.cell(row, column_number)
-            if isinstance(cell, MergedCell):
+            if is_merged_non_anchor(cell):
                 skipped.append(TemplateSkip(record_index, field_name, "merged_non_anchor", coordinate))
                 continue
-            if isinstance(cell.value, str) and cell.value.startswith("=") and not mapping.overwrite_formulas:
+            if is_protected_formula_value(cell.value, overwrite_formulas=mapping.overwrite_formulas):
                 skipped.append(TemplateSkip(record_index, field_name, "protected_formula", coordinate))
                 continue
             if row != style_row:
@@ -234,15 +234,12 @@ def _record_values(record: Mapping[str, Any] | object) -> Mapping[str, Any]:
 
 
 def _column_number(value: str | int) -> int:
-    if isinstance(value, int):
-        if value < 1:
-            raise TemplateWriteError("column numbers start at 1")
-        return value
+    """Convert the shared parser's ``ValueError`` into this module's contract."""
+
     try:
-        number = column_index_from_string(value.strip().upper())
-    except (AttributeError, ValueError) as exc:
-        raise TemplateWriteError(f"invalid column: {value}") from exc
-    return number
+        return column_number(value)
+    except ValueError as exc:
+        raise TemplateWriteError(str(exc)) from exc
 
 
 def _copy_style(source: Any, destination: Any) -> None:
