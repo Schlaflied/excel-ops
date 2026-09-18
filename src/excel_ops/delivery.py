@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
+from openpyxl.utils import get_column_letter
 
 from .ambiguity import (
     UNKNOWN,
@@ -30,6 +30,7 @@ from .ambiguity import (
     load_project_recipe,
     save_project_recipe,
 )
+from .cells import column_number, is_merged_non_anchor, is_protected_formula_value
 from .delivery_verification import (
     DeliveryContract,
     DeliveryVerificationError,
@@ -189,6 +190,11 @@ class PlannedTarget:
     expected_written: int
     expected_review: int
     expected_skipped_existing: int
+    #: Rows the writer is predicted to refuse because a mapped target cell
+    #: already holds a formula or is a merged-range follower.  Those rows are
+    #: excluded from ``expected_written`` so the plan never overstates the write.
+    expected_skipped_protected: int = 0
+    protected_cells: tuple[str, ...] = field(default_factory=tuple)
     blocking_items: tuple[str, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
@@ -202,6 +208,8 @@ class PlannedTarget:
             "expected_written": self.expected_written,
             "expected_review": self.expected_review,
             "expected_skipped_existing": self.expected_skipped_existing,
+            "expected_skipped_protected": self.expected_skipped_protected,
+            "protected_cells": list(self.protected_cells),
             "blocking_items": list(self.blocking_items),
         }
 
@@ -401,8 +409,11 @@ def run_delivery(
         )
 
     outcomes = _block_unresolved(outcomes, batch, ambiguity_records)
-    if recipe_path is not None and project_decisions:
-        save_project_recipe(project_decisions.values(), recipe_path)
+    # A dry run must not touch a single file, and a real run must never drop a
+    # decision an earlier run already recorded: merge the loaded Recipe with
+    # this call's decisions so the file only ever grows or updates in place.
+    if not dry_run and recipe_path is not None and project_decisions:
+        save_project_recipe({**project_recipe, **project_decisions}.values(), recipe_path)
 
     plan, existing_ids = _build_plan(inputs, outcomes, targets, staging, delivery, batch)
     outcomes = _mark_existing(outcomes, existing_ids)
@@ -593,14 +604,39 @@ def _classify(
     return outcomes, match_results
 
 
-def _ambiguity_key(match: MatchResult) -> str | None:
+def _ambiguity_shape(match: MatchResult) -> tuple[str, tuple[str, ...]] | None:
+    """Return the record-independent shape of a match's open question.
+
+    ``Ambiguity.key`` is ``field:question``, and ``group_ambiguities`` merges
+    every ambiguity sharing a key into one confirmation item.  The key must
+    therefore describe the *kind* of question — which candidates are competing
+    for which field — and must not embed the individual record's source value,
+    or nothing would ever group and a saved Recipe decision would only ever
+    match the one run that produced it.
+    """
+
     if match.status in {"review", "conflict"} and match.candidates:
-        return f"{_AMBIGUITY_FIELD}:{_ambiguity_question(match.record.location)}"
+        candidates = tuple(dict.fromkeys(item.destination_key for item in match.candidates))
+        return match.status, candidates
     return None
 
 
-def _ambiguity_question(location: str) -> str:
-    return f"Which declared destination owns source value {location!r}?"
+def _ambiguity_question(status: str, candidates: Sequence[str]) -> str:
+    joined = ", ".join(candidates)
+    if status == "conflict":
+        return (
+            f"Which declared destination owns source values claimed by "
+            f"more than one of [{joined}]?"
+        )
+    return f"Which declared destination owns source values fuzzily matching [{joined}]?"
+
+
+def _ambiguity_key(match: MatchResult) -> str | None:
+    shape = _ambiguity_shape(match)
+    if shape is None:
+        return None
+    status, candidates = shape
+    return f"{_AMBIGUITY_FIELD}:{_ambiguity_question(status, candidates)}"
 
 
 def _ambiguities_from_matches(
@@ -609,21 +645,23 @@ def _ambiguities_from_matches(
     items: list[Ambiguity] = []
     records: dict[str, list[str]] = {}
     for match in match_results:
-        key = _ambiguity_key(match)
-        if key is None:
+        shape = _ambiguity_shape(match)
+        if shape is None:
             continue
-        candidates = tuple(dict.fromkeys(item.destination_key for item in match.candidates))
-        recommendation = candidates[0] if match.status == "review" and len(candidates) == 1 else None
+        status, candidates = shape
+        question = _ambiguity_question(status, candidates)
+        key = f"{_AMBIGUITY_FIELD}:{question}"
+        recommendation = candidates[0] if status == "review" and len(candidates) == 1 else None
         items.append(
             Ambiguity(
                 _AMBIGUITY_FIELD,
-                _ambiguity_question(match.record.location),
+                question,
                 (match.record.location,),
                 candidates,
                 1,
                 recommendation,
                 "fuzzy candidate requires confirmation"
-                if match.status == "review"
+                if status == "review"
                 else "several declared destinations claim this value",
                 match.confidence,
                 (match.record.source,),
@@ -725,7 +763,12 @@ def _counts(outcomes: Sequence[RecordOutcome]) -> dict[str, int]:
 
 
 def _column_number(value: str | int) -> int:
-    return value if isinstance(value, int) else column_index_from_string(str(value).strip().upper())
+    """Convert the shared parser's ``ValueError`` into this module's contract."""
+
+    try:
+        return column_number(value)
+    except ValueError as exc:
+        raise DeliveryPlanError(str(exc)) from exc
 
 
 def _existing_record_ids(path: Path, target: DeliveryTarget) -> set[str]:
@@ -780,6 +823,59 @@ def _target_blockers(target: DeliveryTarget) -> list[str]:
     if target.mapping.max_rows is not None and target.mapping.max_rows == 0:
         blockers.append(f"{target.key}: template_accepts_no_rows")
     return blockers
+
+
+def _predicted_protected_cells(
+    template: Path, target: DeliveryTarget, row_count: int
+) -> tuple[tuple[str, ...], int]:
+    """Predict the mapped cells ``write_template`` will refuse to touch.
+
+    ``write_template`` only discovers a protected cell at write time, which
+    would leave the plan promising rows that can never be written.  Reading the
+    template's mapped cells here and applying the *same* shared predicates
+    (:func:`cells.is_protected_formula_value`, :func:`cells.is_merged_non_anchor`)
+    gives the plan the writer's own verdict ahead of time.
+
+    Returns the predicted cell coordinates and the number of distinct rows they
+    span, because one protected cell fails the whole row closed.
+    """
+
+    mapping = target.mapping
+    if row_count <= 0 or not template.is_file():
+        return (), 0
+    try:
+        workbook = load_workbook(template)
+    except (OSError, ValueError, KeyError):
+        # An unreadable template is already reported by ``_target_blockers`` and
+        # by the writer; a failed pre-check must not invent a second verdict.
+        return (), 0
+    try:
+        if mapping.sheet not in workbook.sheetnames:
+            return (), 0
+        worksheet = workbook[mapping.sheet]
+        columns: list[int] = []
+        for column in mapping.field_columns.values():
+            try:
+                columns.append(_column_number(column))
+            except DeliveryPlanError:
+                continue
+        protected: list[str] = []
+        affected_rows = 0
+        for offset in range(row_count):
+            row = mapping.data_start_row + offset
+            hit = False
+            for index in columns:
+                cell = worksheet.cell(row, index)
+                if is_merged_non_anchor(cell) or is_protected_formula_value(
+                    cell.value, overwrite_formulas=mapping.overwrite_formulas
+                ):
+                    protected.append(f"{get_column_letter(index)}{row}")
+                    hit = True
+            if hit:
+                affected_rows += 1
+        return tuple(protected), affected_rows
+    finally:
+        workbook.close()
 
 
 def _build_plan(

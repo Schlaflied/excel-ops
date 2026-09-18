@@ -11,8 +11,9 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Iterable, Protocol
 
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils import get_column_letter
 
+from .cells import column_number
 from .template_writer import TemplateWriteResult
 
 
@@ -250,7 +251,7 @@ def _has_blocking_findings(findings: Iterable[VerificationFinding]) -> bool:
 
 
 def _column_number(value: str | int) -> int:
-    return value if isinstance(value, int) else column_index_from_string(value)
+    return column_number(value)
 
 
 def _write_report(result: DeliveryVerificationResult) -> None:
