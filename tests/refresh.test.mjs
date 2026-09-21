@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -411,6 +411,124 @@ test("a manifest that cannot be written back degrades to a partial rollback", as
     assert.equal(retry.status, "rolled-back", JSON.stringify(retry));
     assert.equal(retry.manifestRestored, true);
     assert.deepEqual(retry.skipped, []);
+  });
+});
+
+// Windows can refuse symlink creation without Developer Mode or elevation. The regression below
+// is a real security check, so it is never quietly dropped: a refusal fails loudly unless the
+// environment reports the documented privilege error.
+async function link(target, linkPath, type) {
+  try {
+    await symlink(target, linkPath, type);
+    return true;
+  } catch (error) {
+    if (error.code === "EPERM" || error.code === "EACCES") return false;
+    throw error;
+  }
+}
+
+// A planted symlink must never turn rollback's own recovery write into a write outside root.
+// Both the leaf destination and any parent directory component are rejected: either one can
+// redirect the bytes just as effectively.
+test("a symlinked restore destination is rejected instead of written through", async (t) => {
+  await fixture(async (root) => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), "excel-ops-outside-"));
+    try {
+      await writeFile(path.join(outside, "victim"), "untouched");
+      await mkdir(path.join(root, "docs"));
+      await writeFile(path.join(root, "docs", "refresh.md"), "doc");
+      await writeFile(path.join(root, "refresh-manifest.json"), JSON.stringify(
+        makeManifest({ "README.md": hash("base"), "docs/refresh.md": hash("doc") })));
+      const published = makeManifest({ "README.md": hash("new"), "docs/refresh.md": hash("newdoc") });
+      const applied = await apply({
+        root, confirm: true,
+        fetcher: remote(published, { "README.md": "new", "docs/refresh.md": "newdoc" }),
+      });
+      assert.equal(applied.status, "applied", JSON.stringify(applied));
+
+      // A symlink at the leaf destination, pointing at a file outside root.
+      await rm(path.join(root, "README.md"));
+      if (!await link(path.join(outside, "victim"), path.join(root, "README.md"), "file")) {
+        t.skip("symlink creation is not permitted in this environment");
+        return;
+      }
+      // A symlinked parent directory, so the write would land in an outside directory instead.
+      await rm(path.join(root, "docs"), { recursive: true });
+      const outsideDocs = path.join(outside, "docs");
+      await mkdir(outsideDocs);
+      await link(outsideDocs, path.join(root, "docs"), "junction");
+
+      const result = await rollback({ root });
+      // Degrades, never throws: both paths land in the existing restore-failed skip shape.
+      assert.equal(result.status, "rolled-back-partial", JSON.stringify(result));
+      assert.deepEqual(result.restored, []);
+      assert.deepEqual(
+        result.skipped.filter((entry) => entry.path !== "refresh-manifest.json")
+          .map((entry) => [entry.path, entry.reason, entry.detail]).sort(),
+        [["README.md", "restore-failed", "symlink-destination-rejected"],
+          ["docs/refresh.md", "restore-failed", "symlink-parent-rejected"]]);
+
+      // Nothing was written through either link: the outside target keeps its bytes, and the
+      // symlinked parent directory never received the restored file.
+      assert.equal(await readFile(path.join(outside, "victim"), "utf8"), "untouched");
+      assert.equal(await exists(outsideDocs, "refresh.md"), false);
+      // The links themselves were left in place rather than silently replaced.
+      assert.equal((await lstat(path.join(root, "README.md"))).isSymbolicLink(), true);
+      assert.equal((await lstat(path.join(root, "docs"))).isSymbolicLink(), true);
+      // No temp file from the aborted write was left behind in root.
+      assert.equal(await exists(root, ".README.md.tmp"), false);
+
+      // Removing the links lets the recorded run be retried and completed normally.
+      await rm(path.join(root, "README.md"));
+      await rm(path.join(root, "docs"), { recursive: true });
+      const retry = await rollback({ root });
+      assert.equal(retry.status, "rolled-back", JSON.stringify(retry));
+      assert.equal(await readFile(path.join(root, "README.md"), "utf8"), "base");
+      assert.equal(await readFile(path.join(root, "docs", "refresh.md"), "utf8"), "doc");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+// The manifest is restored through the same helper, so it cannot regress separately the way it
+// did when its write was added as a second, unchecked path.
+test("a symlinked manifest destination is rejected instead of written through", async (t) => {
+  await fixture(async (root) => {
+    const outside = await mkdtemp(path.join(os.tmpdir(), "excel-ops-outside-"));
+    try {
+      await writeFile(path.join(outside, "victim"), "untouched");
+      const published = makeManifest({ "README.md": hash("new") });
+      const applied = await apply({
+        root, confirm: true, fetcher: remote(published, { "README.md": "new" }),
+      });
+      assert.equal(applied.status, "applied", JSON.stringify(applied));
+
+      await rm(path.join(root, "refresh-manifest.json"));
+      if (!await link(path.join(outside, "victim"), path.join(root, "refresh-manifest.json"), "file")) {
+        t.skip("symlink creation is not permitted in this environment");
+        return;
+      }
+      const result = await rollback({ root });
+      assert.equal(result.status, "rolled-back-partial", JSON.stringify(result));
+      assert.equal(result.manifestRestored, false);
+      assert.deepEqual(result.skipped.map((entry) => [entry.path, entry.reason, entry.detail]),
+        [["refresh-manifest.json", "restore-failed", "symlink-destination-rejected"]]);
+      // The manifest bytes never reached the outside file, and the link was not replaced.
+      assert.equal(await readFile(path.join(outside, "victim"), "utf8"), "untouched");
+      assert.equal((await lstat(path.join(root, "refresh-manifest.json"))).isSymbolicLink(), true);
+      // Regular entries still rolled back, and the record stays open for a retry.
+      assert.deepEqual(result.restored, ["README.md"]);
+      assert.equal((await readState(root)).status, "rolled-back-partial");
+
+      await rm(path.join(root, "refresh-manifest.json"));
+      const retry = await rollback({ root });
+      assert.equal(retry.status, "rolled-back", JSON.stringify(retry));
+      assert.equal(retry.manifestRestored, true);
+      assert.equal(await readFile(path.join(outside, "victim"), "utf8"), "untouched");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
