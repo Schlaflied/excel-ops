@@ -15,7 +15,10 @@ for (const name of Object.keys(manifest.files).sort()) {
 }
 const content = JSON.stringify({ ...manifest, files }, null, 2) + "\n";
 if (process.argv[2] === "--check") {
-  if (content !== await readFile(filename, "utf8")) {
+  // Compare with line endings normalized: a Windows checkout with core.autocrlf=true
+  // rewrites this file's \n to \r\n on disk, which is not staleness and must not fail CI.
+  const normalize = (text) => text.replace(/\r\n/g, "\n");
+  if (normalize(content) !== normalize(await readFile(filename, "utf8"))) {
     process.stderr.write("refresh-manifest.json is stale; regenerate it.\n");
     process.exitCode = 1;
   }

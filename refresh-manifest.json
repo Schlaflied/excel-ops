@@ -32,7 +32,7 @@
     "issue-refresh-mjs.md": "0eeb44ad2c7be583600ae2f95ff7e586bf18d61894cc01d60a8de0c2f8e2b47d",
     "pyproject.toml": "c1dd170a6f6c353eb8ae5ce208f5154153e18a6f9a4d934d573537ecbd9a65a1",
     "refresh.mjs": "433090a1a96087c3a9f6a552b4f1ca0654ef1c21cdf6b9de1c729bea03955e44",
-    "scripts/update-refresh-manifest.mjs": "51bbd13ab128913d11e1d291e0567ced65f0fb5af7fb650fa8b7069b97c5325b",
+    "scripts/update-refresh-manifest.mjs": "248616dd622f0771664bd77c45628de049234bde451fd2f4f3abebfc6e58e2f1",
     "src/excel_ops/__init__.py": "e66a34d14867ec124281cfb54852025cb4bf7a37531668485c917e60fa6f5ddb",
     "src/excel_ops/ambiguity.py": "52cb3472784e5b738d7489e6a99c1f8b7ba32635b554d4c32d3b1517294d15ec",
     "src/excel_ops/cli.py": "521fd73f74ff89c9e39b085055882cef6eed366e7453e2eece3da41b0989d225",
