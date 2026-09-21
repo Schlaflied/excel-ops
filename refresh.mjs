@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Read-only system update check. Workbook processing remains in Python.
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -96,6 +96,85 @@ async function readIfPresent(filename) {
 async function writeFileAt(filename, bytes) {
   await mkdir(path.dirname(filename), { recursive: true });
   await writeFile(filename, bytes);
+}
+
+// A rejected restore destination: carries a detail string so the caller can record it in the
+// same skip-entry shape a locked or unwritable path already uses.
+class RestoreRejected extends Error {
+  constructor(detail) {
+    super("restore-rejected");
+    this.detail = detail;
+  }
+}
+
+// Rollback is the only place this tool writes over a path it did not itself just create, so it
+// is the only place a planted symlink could redirect a write out of root. Both restore callers
+// (entry files and the manifest) go through here; a second write path is exactly how the
+// manifest missed this check the first time.
+//
+// Every component between root and the destination is inspected with lstat, never stat: stat
+// follows the very link being looked for. A symlinked parent directory redirects a write just
+// as effectively as a symlinked leaf, so both are rejected. Missing parents are created one
+// component at a time rather than with a recursive mkdir, which would happily walk through an
+// existing symlinked component.
+//
+// The write itself lands on a fresh temp file in the destination directory (flag "wx", so it
+// can never open something already sitting at that name) and is then renamed into place.
+// rename() replaces the directory entry and never writes through a link, so a symlink planted
+// between the lstat check and the write receives nothing: it is replaced, not followed. That
+// closes the TOCTOU gap a check-then-writeFile pair would leave open.
+// The destination is passed already resolved, because the two callers resolve it differently:
+// an entry path goes through at(), while the manifest is not itself a manifest-listed system
+// path and so is joined directly. Containment in root is therefore re-checked here rather than
+// assumed, so neither caller can hand this helper a path outside the sandboxed root.
+async function restoreFileAt(root, filename, bytes) {
+  const relative = path.relative(root, filename);
+  if (!relative || path.isAbsolute(relative) ||
+      relative.split(path.sep).some((part) => part === "..")) {
+    throw new RestoreRejected("outside-root");
+  }
+  const parts = relative.split(path.sep);
+  let walked = root;
+  for (const part of parts.slice(0, -1)) {
+    walked = path.join(walked, part);
+    let stat = null;
+    try {
+      stat = await lstat(walked);
+    } catch (error) {
+      if (!absent(error)) throw new RestoreRejected(error.code || "unknown");
+    }
+    if (stat === null) {
+      try {
+        await mkdir(walked);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw new RestoreRejected(error.code || "unknown");
+      }
+      continue;
+    }
+    if (stat.isSymbolicLink()) throw new RestoreRejected("symlink-parent-rejected");
+    if (!stat.isDirectory()) throw new RestoreRejected("ENOTDIR");
+  }
+
+  try {
+    const stat = await lstat(filename);
+    if (stat.isSymbolicLink()) throw new RestoreRejected("symlink-destination-rejected");
+    if (!stat.isFile()) throw new RestoreRejected("not-a-regular-file");
+  } catch (error) {
+    if (error instanceof RestoreRejected) throw error;
+    if (!absent(error)) throw new RestoreRejected(error.code || "unknown");
+  }
+
+  const temporary = path.join(
+    path.dirname(filename),
+    `.${path.basename(filename)}.${randomUUID().slice(0, 8)}.tmp`,
+  );
+  try {
+    await writeFile(temporary, bytes, { flag: "wx" });
+    await rename(temporary, filename);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => {});
+    throw new RestoreRejected(error.code || "unknown");
+  }
 }
 
 async function localChanges(root, manifest) {
@@ -479,9 +558,11 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
       continue;
     }
     try {
-      await writeFileAt(filename, bytes);
+      await restoreFileAt(root, filename, bytes);
     } catch (error) {
-      result.skipped.push({ path: entry.path, reason: "restore-failed", detail: error.code || "unknown" });
+      result.skipped.push({
+        path: entry.path, reason: "restore-failed", detail: error.detail || error.code || "unknown",
+      });
       continue;
     }
     result.restored.push(entry.path);
@@ -491,13 +572,16 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
   if (state.manifestBackup === `${state.backupPath}/files/${MANIFEST}`) {
     const bytes = await readIfPresent(at(root, state.manifestBackup));
     if (bytes !== null) {
-      // The manifest is restored through the same failure path as every other entry: a locked
-      // or unwritable manifest is recorded as retryable instead of aborting the whole rollback.
+      // The manifest is restored through the same helper and the same failure path as every
+      // other entry: a locked, unwritable, or symlinked manifest is recorded as retryable
+      // instead of writing through the link or aborting the whole rollback.
       try {
-        await writeFile(path.join(root, MANIFEST), bytes);
+        await restoreFileAt(root, path.join(root, MANIFEST), bytes);
         manifestRestored = true;
       } catch (error) {
-        result.skipped.push({ path: MANIFEST, reason: "restore-failed", detail: error.code || "unknown" });
+        result.skipped.push({
+          path: MANIFEST, reason: "restore-failed", detail: error.detail || error.code || "unknown",
+        });
       }
     }
   }

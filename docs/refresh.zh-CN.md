@@ -41,7 +41,7 @@ node refresh.mjs agent-check [--force]
 
 `rollback` 只回滚 `apply` 自己记录的最近一次更新。它不是通用的恢复工具：只读取 `.refresh/state.json`，只处理其中列出的路径，并从该次运行的备份恢复其字节内容。
 
-更新之后被改动过的文件保持原样，并在 `skipped` 中以 `changed-after-apply` 报告；更新之后新增的用户文件根本不在处理范围内。状态包括 `rolled-back`、`rolled-back-partial`（有跳过项）、`rolled-back-unverified`（完整性检查未通过）、`already-rolled-back`、`no-apply-recorded` 和 `state-invalid`。若某个路径无法写回（例如被占用锁定），会在 `skipped` 中以 `restore-failed` 报告，而不会中断整次回滚；`refresh-manifest.json` 自身也走同一条失败记录路径，清单写不回时同样记为跳过，不会向外抛错。`.refresh/state.json` 记录的状态与本次运行返回的状态一致，因此 `rolled-back-partial` 和 `rolled-back-unverified` 都保持可重试：在排除原因后再次运行 `rollback` 会重试这些跳过项并重新执行完整性检查。已经恢复过的条目哈希与记录一致，重试只会写回相同的字节。只有完整且校验通过的回滚才记为 `rolled-back`，再次运行时返回 `already-rolled-back`。恢复完成后会重新运行完整性检查，结果以 `integrity` 返回。
+更新之后被改动过的文件保持原样，并在 `skipped` 中以 `changed-after-apply` 报告；更新之后新增的用户文件根本不在处理范围内。状态包括 `rolled-back`、`rolled-back-partial`（有跳过项）、`rolled-back-unverified`（完整性检查未通过）、`already-rolled-back`、`no-apply-recorded` 和 `state-invalid`。若某个路径无法写回（例如被占用锁定），会在 `skipped` 中以 `restore-failed` 报告，而不会中断整次回滚；`refresh-manifest.json` 自身也走同一条失败记录路径，清单写不回时同样记为跳过，不会向外抛错。所有恢复写入（含清单）都经过同一个辅助函数：若目标路径本身、或仓库根目录与目标之间的任一级父目录是符号链接，则拒绝写入；写入先落到同目录的临时文件再重命名就位，因此检查与写入之间不存在竞态窗口。这类目标会在 `skipped` 中以 `restore-failed` 报告，`detail` 为 `symlink-destination-rejected` 或 `symlink-parent-rejected`；不会有任何字节经由该链接写出，链接本身也保持原样，便于你在重试前检查并删除。`.refresh/state.json` 记录的状态与本次运行返回的状态一致，因此 `rolled-back-partial` 和 `rolled-back-unverified` 都保持可重试：在排除原因后再次运行 `rollback` 会重试这些跳过项并重新执行完整性检查。已经恢复过的条目哈希与记录一致，重试只会写回相同的字节。只有完整且校验通过的回滚才记为 `rolled-back`，再次运行时返回 `already-rolled-back`。恢复完成后会重新运行完整性检查，结果以 `integrity` 返回。
 
 ## agent-check
 
