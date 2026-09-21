@@ -347,6 +347,73 @@ test("a partial rollback stays retryable until the skipped path is restored", as
   });
 });
 
+test("an unverified rollback stays retryable instead of closing the state record", async () => {
+  await fixture(async (root) => {
+    // A second system file is listed on both sides, so the apply never touches it and it
+    // never becomes a state entry - it can only ever surface through the integrity check.
+    await mkdir(path.join(root, "docs"), { recursive: true });
+    await writeFile(path.join(root, "docs", "refresh.md"), "doc");
+    await writeFile(path.join(root, "refresh-manifest.json"), JSON.stringify(
+      makeManifest({ "README.md": hash("base"), "docs/refresh.md": hash("doc") })));
+    const published = makeManifest({ "README.md": hash("new"), "docs/refresh.md": hash("doc") });
+    const applied = await apply({
+      root, confirm: true, fetcher: remote(published, { "README.md": "new" }),
+    });
+    assert.equal(applied.status, "applied", JSON.stringify(applied));
+
+    // Nothing the rollback owns fails, but the restored manifest no longer matches the tree.
+    await writeFile(path.join(root, "docs", "refresh.md"), "edited outside the update");
+    const unverified = await rollback({ root });
+    assert.equal(unverified.status, "rolled-back-unverified", JSON.stringify(unverified));
+    assert.deepEqual(unverified.skipped, []);
+    assert.deepEqual(unverified.restored, ["README.md"]);
+    assert.equal(unverified.integrity.ok, false);
+    // The record must keep the unverified outcome, never collapse it to a closed rollback.
+    assert.equal((await readState(root)).status, "rolled-back-unverified");
+
+    // So a rerun actually retries and re-verifies rather than short-circuiting.
+    const retried = await rollback({ root });
+    assert.notEqual(retried.status, "already-rolled-back");
+    assert.equal(retried.status, "rolled-back-unverified");
+
+    await writeFile(path.join(root, "docs", "refresh.md"), "doc");
+    const verified = await rollback({ root });
+    assert.equal(verified.status, "rolled-back", JSON.stringify(verified));
+    assert.equal(verified.integrity.ok, true);
+    assert.equal((await readState(root)).status, "rolled-back");
+    assert.equal((await rollback({ root })).status, "already-rolled-back");
+  });
+});
+
+test("a manifest that cannot be written back degrades to a partial rollback", async () => {
+  await fixture(async (root) => {
+    const published = makeManifest({ "README.md": hash("new") });
+    const applied = await apply({
+      root, confirm: true, fetcher: remote(published, { "README.md": "new" }),
+    });
+    assert.equal(applied.status, "applied");
+
+    // A directory at the manifest path makes its restore write fail, like a locked file.
+    await rm(path.join(root, "refresh-manifest.json"));
+    await mkdir(path.join(root, "refresh-manifest.json"));
+    const partial = await rollback({ root });
+    assert.equal(partial.status, "rolled-back-partial", JSON.stringify(partial));
+    assert.equal(partial.manifestRestored, false);
+    assert.deepEqual(partial.skipped.map((entry) => [entry.path, entry.reason]),
+      [["refresh-manifest.json", "restore-failed"]]);
+    // Regular entries still went back, and the record stays open for a retry.
+    assert.deepEqual(partial.restored, ["README.md"]);
+    assert.equal(await readFile(path.join(root, "README.md"), "utf8"), "base");
+    assert.equal((await readState(root)).status, "rolled-back-partial");
+
+    await rm(path.join(root, "refresh-manifest.json"), { recursive: true });
+    const retry = await rollback({ root });
+    assert.equal(retry.status, "rolled-back", JSON.stringify(retry));
+    assert.equal(retry.manifestRestored, true);
+    assert.deepEqual(retry.skipped, []);
+  });
+});
+
 test("an unreadable state record blocks rollback without changing files", async () => {
   await fixture(async (root) => {
     await mkdir(path.join(root, ".refresh"), { recursive: true });
