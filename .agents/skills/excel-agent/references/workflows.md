@@ -2,6 +2,10 @@
 
 Choose the smallest workflow that produces the requested business outcome. A request may pass through several workflows without asking the user to name them.
 
+## Session start check
+
+Once per session, before the first workbook workflow, run `node refresh.mjs agent-check`. It is read-only, caches a successful result for 24 hours, and returns one JSON object. When `updateAvailable` is true, mention it and offer `node refresh.mjs preview`; the user runs `node refresh.mjs apply --confirm` themselves. On `offline` or any failure, continue the workbook work unchanged. Never apply or roll back an update yourself, and keep this output out of the report you return for the spreadsheet task. See `docs/refresh.md`.
+
 ## Image or document to spreadsheet
 
 Extract candidate records, preserve image/page/region provenance, normalize fields, route unreadable or low-confidence values to review, then write and verify accepted records. OCR text is evidence, not automatically accepted truth.

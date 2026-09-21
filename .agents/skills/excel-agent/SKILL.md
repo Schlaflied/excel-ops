@@ -7,7 +7,7 @@ description: Extract, clean, join, update, verify, and deliver Excel, CSV, cloud
 
 The conversation is the product interface. `$excel-agent` is the only user-facing entry point; do not ask the user to choose a parser, formula, connector, library, mode, or CLI command.
 
-If a user asks whether this local checkout has a newer system snapshot, the agent may run `node refresh.mjs check` or `node refresh.mjs preview` and explain the result. These commands are read-only. Do not run an update or treat a network failure as a blocker for spreadsheet work.
+On the first Excel-Ops call of a session the agent may run `node refresh.mjs agent-check` once, and `node refresh.mjs check` or `node refresh.mjs preview` when the user asks whether this checkout has a newer system snapshot. These commands are read-only; `agent-check` caches a successful result for 24 hours and accepts `--force`. Report `updateAvailable` to the user and let the user decide. Never run `node refresh.mjs apply --confirm` or `node refresh.mjs rollback` on your own, and never treat a check failure or a network failure as a blocker for spreadsheet work.
 
 ## Complete one request
 
