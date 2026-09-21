@@ -256,6 +256,97 @@ test("rollback keeps files changed after the apply and needs a recorded run", as
   });
 });
 
+test("apply fetches and trusts exactly one remote manifest", async () => {
+  await fixture(async (root) => {
+    // A second manifest read would see a different, unstaged file and could write it into the
+    // final manifest, or reject and escape the JSON contract entirely.
+    let manifestCalls = 0;
+    const drifting = async (url) => {
+      const name = url.slice(RAW.length).split("/").map(decodeURIComponent).join("/");
+      if (name === "refresh-manifest.json") {
+        manifestCalls += 1;
+        if (manifestCalls > 1) throw new Error("network down");
+        return { ok: true, json: async () => update };
+      }
+      if (!(name in updateContents)) return { ok: false };
+      return { ok: true, arrayBuffer: async () => Buffer.from(updateContents[name]) };
+    };
+    const result = await apply({ root, fetcher: drifting, confirm: true });
+    assert.equal(result.status, "applied", JSON.stringify(result));
+    assert.equal(manifestCalls, 1);
+    const written = JSON.parse(await readFile(path.join(root, "refresh-manifest.json"), "utf8"));
+    assert.deepEqual(written.files, update.files);
+    // Every path in the written manifest was staged and verified on disk.
+    for (const name of Object.keys(written.files)) {
+      assert.equal(await exists(root, ...name.split("/")), true, name);
+    }
+  });
+});
+
+test("a tampered state record cannot point a rollback outside root", async () => {
+  await fixture(async (root) => {
+    const outside = path.join(root, "..", `escape-${path.basename(root)}`);
+    await mkdir(path.join(outside, "files"), { recursive: true });
+    await writeFile(path.join(outside, "files", "README.md"), "attacker bytes");
+    await mkdir(path.join(root, ".refresh"), { recursive: true });
+    const tampered = [
+      // backupPath escapes while still carrying the ".refresh/backups/" prefix.
+      { runId: "run1", backupPath: `.refresh/backups/../../escape-${path.basename(root)}` },
+      // runId itself carries the traversal, so a derived backupPath would escape too.
+      { runId: `../../escape-${path.basename(root)}`, backupPath: `.refresh/backups/../../escape-${path.basename(root)}` },
+      // A prefixed but unrelated backup directory is no longer accepted either.
+      { runId: "run1", backupPath: ".refresh/backups/other-run" },
+    ];
+    try {
+      for (const { runId, backupPath } of tampered) {
+        await writeFile(path.join(root, ".refresh", "state.json"), JSON.stringify({
+          schema: 1, runId, backupPath, manifestBackup: `${backupPath}/files/refresh-manifest.json`,
+          entries: [{
+            path: "README.md", action: "updated", backup: `${backupPath}/files/README.md`,
+            previousHash: hash("attacker bytes"), newHash: hash("new"),
+          }],
+        }));
+        const result = await rollback({ root });
+        assert.equal(result.status, "state-invalid", backupPath);
+        assert.deepEqual(result.restored, []);
+        assert.equal(await readFile(path.join(root, "README.md"), "utf8"), "base");
+      }
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+test("a partial rollback stays retryable until the skipped path is restored", async () => {
+  await fixture(async (root) => {
+    const published = makeManifest({ "README.md": hash("new") });
+    const applied = await apply({
+      root, confirm: true, fetcher: remote(published, { "README.md": "new" }),
+    });
+    assert.equal(applied.status, "applied");
+
+    // A directory at the target path makes exactly one restore write fail, like a locked file.
+    await rm(path.join(root, "README.md"));
+    await mkdir(path.join(root, "README.md"));
+    const partial = await rollback({ root });
+    assert.equal(partial.status, "rolled-back-partial");
+    assert.deepEqual(partial.restored, []);
+    assert.deepEqual(partial.skipped.map((entry) => [entry.path, entry.reason]),
+      [["README.md", "restore-failed"]]);
+    assert.equal((await readState(root)).status, "rolled-back-partial");
+
+    // Once the cause is resolved a second rollback retries instead of reporting completion.
+    await rm(path.join(root, "README.md"), { recursive: true });
+    const retry = await rollback({ root });
+    assert.equal(retry.status, "rolled-back", JSON.stringify(retry));
+    assert.deepEqual(retry.restored, ["README.md"]);
+    assert.deepEqual(retry.skipped, []);
+    assert.equal(await readFile(path.join(root, "README.md"), "utf8"), "base");
+    assert.equal((await readState(root)).status, "rolled-back");
+    assert.equal((await rollback({ root })).status, "already-rolled-back");
+  });
+});
+
 test("an unreadable state record blocks rollback without changing files", async () => {
   await fixture(async (root) => {
     await mkdir(path.join(root, ".refresh"), { recursive: true });
