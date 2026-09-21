@@ -8,3 +8,4 @@ build/
 !examples/*.xlsx
 pytest-cache-files-*/
 tmp*/
+.refresh/

@@ -78,7 +78,7 @@ See [Batch ambiguity confirmation and Recipes](docs/ambiguity-recipes.md) for gr
 
 For comparing workbook structures before append, join, or write-back, see [Schema drift](docs/schema-drift.md).
 
-For read-only system update checks, see [Refresh](docs/refresh.md).
+For system update checks, confirmed updates, and rollback, see [Refresh](docs/refresh.md).
 
 ## Input format
 

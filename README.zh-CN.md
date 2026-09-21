@@ -74,7 +74,7 @@ excel-ops deliver delivery-plan.json             # 写入 staging 副本，验�
 
 在追加、合并或写回前比较工作簿结构，见 [Schema Drift 检查](docs/schema-drift.zh-CN.md)。
 
-只读的系统更新检查见 [Refresh](docs/refresh.zh-CN.md)。
+系统更新检查、显式确认的更新与回滚见 [Refresh](docs/refresh.zh-CN.md)。
 
 ## 输入格式
 
