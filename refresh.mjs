@@ -491,8 +491,14 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
   if (state.manifestBackup === `${state.backupPath}/files/${MANIFEST}`) {
     const bytes = await readIfPresent(at(root, state.manifestBackup));
     if (bytes !== null) {
-      await writeFile(path.join(root, MANIFEST), bytes);
-      manifestRestored = true;
+      // The manifest is restored through the same failure path as every other entry: a locked
+      // or unwritable manifest is recorded as retryable instead of aborting the whole rollback.
+      try {
+        await writeFile(path.join(root, MANIFEST), bytes);
+        manifestRestored = true;
+      } catch (error) {
+        result.skipped.push({ path: MANIFEST, reason: "restore-failed", detail: error.code || "unknown" });
+      }
     }
   }
   result.restored.sort();
@@ -510,10 +516,14 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
   result.status = result.skipped.length ? "rolled-back-partial" : integrity.ok ? "rolled-back" : "rolled-back-unverified";
   result.message = result.skipped.length
     ? "The recorded update was reverted except for paths changed after the apply; see skipped."
-    : "The most recent recorded update was reverted.";
-  // A partial rollback stays open: rerunning it is a no-op for entries already restored (their
-  // current bytes match the recorded hashes), so only the skipped paths are actually retried.
-  state.status = result.skipped.length ? "rolled-back-partial" : "rolled-back";
+    : integrity.ok
+      ? "The most recent recorded update was reverted."
+      : "Files were restored but the post-rollback integrity check did not pass; " +
+        "rerun node refresh.mjs rollback to retry and re-verify.";
+  // Only a fully verified rollback closes the state record. A partial or unverified rollback
+  // stays open so it can be rerun: rerunning is a no-op for entries already restored (their
+  // current bytes match the recorded hashes), so only skipped paths and the check are retried.
+  state.status = result.status;
   state.rolledBackAt = new Date(now()).toISOString();
   await writeFileAt(stateFile, Buffer.from(JSON.stringify(state, null, 2) + "\n", "utf8"));
   return result;
