@@ -66,9 +66,17 @@ export function validateManifest(value) {
 }
 
 // Every filesystem write resolves through here, so a path must be relative and "/" separated.
+// A ".refresh/" run path is checked as strictly as a system path: no separator, drive, or "."
+// and ".." segment may survive, so no caller can escape root through path.join.
 function at(root, name) {
-  if (!isSystemPath(name) && !name.startsWith(`${WORK_DIR}/`)) throw new Error("unsupported-path");
+  if (!isSystemPath(name) && !isWorkPath(name)) throw new Error("unsupported-path");
   return path.join(root, ...name.split("/"));
+}
+
+function isWorkPath(name) {
+  if (typeof name !== "string" || !name.startsWith(`${WORK_DIR}/`) ||
+      name.includes("\\") || /[\0:<>|?*]/.test(name)) return false;
+  return !name.split("/").some((part) => !part || part === "." || part === "..");
 }
 
 // A missing path reports ENOENT on Windows but ENOTDIR on Unix when a parent is a file.
@@ -141,7 +149,9 @@ function manifestBytes(manifest) {
   return Buffer.from(JSON.stringify({ ...manifest, files }, null, 2) + "\n", "utf8");
 }
 
-export async function inspect({ mode = "check", root = ROOT, fetcher = fetch } = {}) {
+// onRemote receives the single validated remote manifest, so apply can reuse the exact object
+// this inspect diffed instead of fetching a second, possibly different one.
+export async function inspect({ mode = "check", root = ROOT, fetcher = fetch, onRemote } = {}) {
   if (mode !== "check" && mode !== "preview") throw new Error("unsupported-command");
   const result = {
     schema: 1,
@@ -169,6 +179,7 @@ export async function inspect({ mode = "check", root = ROOT, fetcher = fetch } =
     result.status = error.message === "invalid-manifest" ? "remote-manifest-invalid" : "offline";
     return result;
   }
+  if (onRemote) onRemote(remote);
   result.remoteVersion = remote.version;
   const oldFiles = local.files;
   const newFiles = remote.files;
@@ -235,7 +246,10 @@ export async function apply({ root = ROOT, fetcher = fetch, confirm = false, now
   };
   if (!confirm) return result;
 
-  const preview = await inspect({ mode: "preview", root, fetcher });
+  // One fetch, one validated manifest: the object that decided the conflict and staging lists
+  // is the same one that supplies the hashes and is written at the end.
+  let remote = null;
+  const preview = await inspect({ mode: "preview", root, fetcher, onRemote: (value) => { remote = value; } });
   result.localVersion = preview.localVersion;
   result.remoteVersion = preview.remoteVersion;
   if (["offline", "local-manifest-invalid", "remote-manifest-invalid"].includes(preview.status)) {
@@ -257,7 +271,13 @@ export async function apply({ root = ROOT, fetcher = fetch, confirm = false, now
     return result;
   }
 
-  const remote = await remoteManifest(fetcher);
+  if (!remote) {
+    // Defensive: a non-failing preview always yields a manifest, so this stays inside the
+    // documented JSON contract instead of escaping as a rejection to stderr.
+    result.status = "remote-manifest-invalid";
+    result.message = "No update was applied and no file changed.";
+    return result;
+  }
 
   // Stage and verify every incoming byte before touching the working tree.
   const staged = new Map();
@@ -365,9 +385,13 @@ export async function apply({ root = ROOT, fetcher = fetch, confirm = false, now
   return result;
 }
 
+// A run id is the only free text in the state record, so it may not carry a path segment:
+// the backup directory is then derived from it and must match exactly.
+const RUN_ID = /^[A-Za-z0-9-]+$/;
+
 function validateState(value) {
   if (!value || value.schema !== 1 || typeof value.runId !== "string" || !value.runId ||
-      typeof value.backupPath !== "string" || !value.backupPath.startsWith(`${BACKUPS}/`) ||
+      !RUN_ID.test(value.runId) || value.backupPath !== `${BACKUPS}/${value.runId}` ||
       !Array.isArray(value.entries)) {
     throw new Error("state-invalid");
   }
@@ -428,7 +452,13 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
     }
     if (entry.action === "added") {
       if (current !== null) {
-        await rm(filename, { force: true });
+        try {
+          await rm(filename, { force: true });
+        } catch (error) {
+          // A locked or busy path stays recorded as retryable instead of aborting the run.
+          result.skipped.push({ path: entry.path, reason: "restore-failed", detail: error.code || "unknown" });
+          continue;
+        }
         result.removed.push(entry.path);
       } else {
         result.skipped.push({ path: entry.path, reason: "already-absent" });
@@ -448,7 +478,12 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
       result.skipped.push({ path: entry.path, reason: "backup-missing" });
       continue;
     }
-    await writeFileAt(filename, bytes);
+    try {
+      await writeFileAt(filename, bytes);
+    } catch (error) {
+      result.skipped.push({ path: entry.path, reason: "restore-failed", detail: error.code || "unknown" });
+      continue;
+    }
     result.restored.push(entry.path);
   }
 
@@ -476,7 +511,9 @@ export async function rollback({ root = ROOT, now = Date.now } = {}) {
   result.message = result.skipped.length
     ? "The recorded update was reverted except for paths changed after the apply; see skipped."
     : "The most recent recorded update was reverted.";
-  state.status = "rolled-back";
+  // A partial rollback stays open: rerunning it is a no-op for entries already restored (their
+  // current bytes match the recorded hashes), so only the skipped paths are actually retried.
+  state.status = result.skipped.length ? "rolled-back-partial" : "rolled-back";
   state.rolledBackAt = new Date(now()).toISOString();
   await writeFileAt(stateFile, Buffer.from(JSON.stringify(state, null, 2) + "\n", "utf8"));
   return result;

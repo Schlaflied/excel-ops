@@ -41,7 +41,7 @@ node refresh.mjs agent-check [--force]
 
 `rollback` 只回滚 `apply` 自己记录的最近一次更新。它不是通用的恢复工具：只读取 `.refresh/state.json`，只处理其中列出的路径，并从该次运行的备份恢复其字节内容。
 
-更新之后被改动过的文件保持原样，并在 `skipped` 中以 `changed-after-apply` 报告；更新之后新增的用户文件根本不在处理范围内。状态包括 `rolled-back`、`rolled-back-partial`（有跳过项）、`rolled-back-unverified`（完整性检查未通过）、`already-rolled-back`、`no-apply-recorded` 和 `state-invalid`。恢复完成后会重新运行完整性检查，结果以 `integrity` 返回。
+更新之后被改动过的文件保持原样，并在 `skipped` 中以 `changed-after-apply` 报告；更新之后新增的用户文件根本不在处理范围内。状态包括 `rolled-back`、`rolled-back-partial`（有跳过项）、`rolled-back-unverified`（完整性检查未通过）、`already-rolled-back`、`no-apply-recorded` 和 `state-invalid`。若某个路径无法写回（例如被占用锁定），会在 `skipped` 中以 `restore-failed` 报告，而不会中断整次回滚。部分成功的回滚在 `.refresh/state.json` 中记为 `rolled-back-partial`，因此在排除原因后可以再次运行 `rollback` 重试这些跳过项；已经恢复过的条目哈希与记录一致，重试只会写回相同的字节。只有完全成功的回滚才记为 `rolled-back`，再次运行时返回 `already-rolled-back`。恢复完成后会重新运行完整性检查，结果以 `integrity` 返回。
 
 ## agent-check
 

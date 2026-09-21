@@ -41,7 +41,7 @@ A successful run returns `applied` with the file-level `added`, `updated`, and `
 
 `rollback` reverts only the most recent update that `apply` itself recorded. It is not a general restore tool: it reads `.refresh/state.json`, touches only the paths listed there, and restores their bytes from that run's backup.
 
-A file changed after the apply is left exactly as it is and reported under `skipped` with `changed-after-apply`. Files added after the apply are never seen at all. Statuses are `rolled-back`, `rolled-back-partial` (something was skipped), `rolled-back-unverified` (the integrity check did not come back clean), `already-rolled-back`, `no-apply-recorded`, or `state-invalid`. After restoring, the integrity check reruns and its result is returned as `integrity`.
+A file changed after the apply is left exactly as it is and reported under `skipped` with `changed-after-apply`. Files added after the apply are never seen at all. Statuses are `rolled-back`, `rolled-back-partial` (something was skipped), `rolled-back-unverified` (the integrity check did not come back clean), `already-rolled-back`, `no-apply-recorded`, or `state-invalid`. A path that could not be written back, for example because it is locked, is reported under `skipped` with `restore-failed` instead of aborting the run. A partial rollback is recorded as `rolled-back-partial` in `.refresh/state.json`, so running `rollback` again retries the skipped paths once their cause is resolved; entries already restored match the recorded hashes and are restored to the same bytes. Only a complete rollback is recorded as `rolled-back` and reports `already-rolled-back` on a second run. After restoring, the integrity check reruns and its result is returned as `integrity`.
 
 ## agent-check
 
