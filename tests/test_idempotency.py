@@ -11,6 +11,7 @@ per-record deduplication inside a delivered workbook is covered by
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -719,7 +720,48 @@ def test_the_default_task_key_is_an_opaque_digest_of_the_target(tmp_path: Path):
 # --------------------------------------------------------------------------- #
 
 
-def test_windows_style_paths_and_non_ascii_filenames_round_trip(tmp_path: Path):
+def test_non_ascii_filenames_round_trip(tmp_path: Path):
+    """OS-agnostic: real filesystem interaction via tmp_path in its native form.
+
+    Non-ASCII (Chinese) characters are not separator characters on any OS, so
+    this exercises fingerprinting/no-op detection identically on Windows and
+    Linux.
+    """
+
+    directory = tmp_path / "共享盘" / "本期交付"
+    source = _write(directory / "北区巡检-源数据.csv", CONTENT)
+    template = _write(directory / "巡检模板（最终）.csv", TEMPLATE_CONTENT)
+    output = directory / "巡检模板-北区仓库.xlsx"
+    connector = ConnectorTarget.local([output])
+
+    fingerprint = compute_fingerprint(
+        inputs=[source], templates=[template], connector=connector
+    )
+    path = state_path(directory)
+    record_run(fingerprint, path, task_key="周报", status=SUCCEEDED, delivered=True)
+
+    again = compute_fingerprint(inputs=[source], templates=[template], connector=connector)
+    decision = evaluate_run(again, load_run_record(path, "周报"), connector=connector)
+
+    assert decision.decision == NO_OP
+    assert connector.identifier.startswith("local:")
+    assert "\\" not in connector.identifier, "output targets are POSIX-normalised"
+    assert Path(path).read_text(encoding="utf-8")  # written and readable as UTF-8
+    json.dumps(decision.to_dict(), ensure_ascii=False)
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="backslash-separated path strings are only meaningful to pathlib on Windows",
+)
+def test_windows_style_backslash_path_strings_are_accepted(tmp_path: Path):
+    """Windows-only: ``file_content_digest`` has no explicit backslash-handling
+    of its own -- it opens ``Path(path)`` directly, which only treats '\\' as a
+    separator on Windows. On Linux a literal-backslash string never resolves to
+    the real file, so this is stdlib platform behaviour, not a bug in
+    ``idempotency.py``, and is only meaningfully testable on win32.
+    """
+
     directory = tmp_path / "共享盘" / "本期交付"
     source = _write(directory / "北区巡检-源数据.csv", CONTENT)
     template = _write(directory / "巡检模板（最终）.csv", TEMPLATE_CONTENT)
@@ -738,7 +780,3 @@ def test_windows_style_paths_and_non_ascii_filenames_round_trip(tmp_path: Path):
     decision = evaluate_run(again, load_run_record(path, "周报"), connector=connector)
 
     assert decision.decision == NO_OP
-    assert connector.identifier.startswith("local:")
-    assert "\\" not in connector.identifier, "output targets are POSIX-normalised"
-    assert Path(path).read_text(encoding="utf-8")  # written and readable as UTF-8
-    json.dumps(decision.to_dict(), ensure_ascii=False)
