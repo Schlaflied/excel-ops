@@ -55,7 +55,7 @@
     "src/excel_ops/schema_drift.py": "aa9085267d4918a3894a1874c5b0fab0720df20a80d54e7f9e189e3e42064f50",
     "src/excel_ops/template_writer.py": "7ad5ee78488919ac56a66027d81aaef09e4e3a86703bac575d8850857af3cab7",
     "src/excel_ops/workbook.py": "56a8a13e2b9cdc583301610ff12b4d46789320c21fdc06b8bee783b5bba42f67",
-    "src/excel_ops/workdir.py": "8e2cc71240442df615662bc3555383fb507ab6d037d8a0f3c6e5aaa7ab309c22",
+    "src/excel_ops/workdir.py": "54cedfe78b028b953b8a0c3fd7f054e0cc4039b2ce7f892b2061963b2d3ba32f",
     "tests/refresh.test.mjs": "543c2722164543cc97155f84bbbeaf751e21d047944dda8602223223bc1ba4df",
     "tests/test_agent_skill.py": "e33bc75638ffd54351a24b7561f43b687d0384abcf230f0acd17d03d730e745e",
     "tests/test_ambiguity.py": "f997ca6e22e713fa76344cdd89fe5a2a2b8d32a59640c65dcaf60debf07ed4c6",
@@ -73,6 +73,6 @@
     "tests/test_review_pack.py": "c0903c16b022c362693a3efc216f13fb95b0b8eaa544fd803898b237e5a986c7",
     "tests/test_schema_drift.py": "c3ff096e4a0f48a69c0475632b57458a6691b52842e02da3dca357ad81980da6",
     "tests/test_template_writer.py": "53c82e94be8a826cae802b56b2baed2777189ecf066a105add5ae116e629e677",
-    "tests/test_workdir.py": "93e768d6c61af5af3764fa2db4608a14be038ccd8a18f7a511ed746a8427f564"
+    "tests/test_workdir.py": "2e6f50671d9936208b7e1fce8f827482bbd3203925cd388b924125f7d73a2532"
   }
 }
