@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -282,16 +283,20 @@ def test_non_recursive_scope_reports_the_subdirectory_instead_of_reading_it(tmp_
     assert recursive.entry("archive/old-hours.csv") is not None
 
 
-def test_windows_style_paths_and_chinese_filenames_round_trip(tmp_path):
+def test_chinese_filenames_round_trip(tmp_path):
+    """OS-agnostic: real filesystem interaction via tmp_path in its native form.
+
+    Chinese characters are not separator characters on any OS, so this exercises
+    duplicate/period classification identically on Windows and Linux.
+    """
     work = tmp_path / "工作目录"
     work.mkdir()
     _file(work, "九月工时.csv", "地点,日期\n北区,2026-09-02\n")
     _file(work, "八月工时.csv", "地点,日期\n北区,2026-08-02\n", when=BEFORE_PERIOD)
     _file(work, "模板-北区.xlsx", "template")
-    _file(work, "子目录\\九月补充.csv".replace("\\", "/"), "地点,日期\n南区,2026-09-05\n")
+    _file(work, "子目录/九月补充.csv", "地点,日期\n南区,2026-09-05\n")
 
-    windows_style = str(work).replace("/", "\\")
-    result = _scan(windows_style)
+    result = _scan(work)
 
     assert result.entry("九月工时.csv").disposition == INCLUDE
     assert result.entry("八月工时.csv").disposition == EXCLUDE
@@ -302,6 +307,23 @@ def test_windows_style_paths_and_chinese_filenames_round_trip(tmp_path):
     assert all("\\" not in item.relative_path for item in result.files)
     payload = json.loads(json.dumps(result.to_dict(), ensure_ascii=False))
     assert "九月工时.csv" in {item["relative_path"] for item in payload["files"]}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="backslash-separated path strings are only meaningful to pathlib on Windows")
+def test_windows_style_backslash_path_strings_are_accepted(tmp_path):
+    """Windows-only: ScanScope.of() has no explicit backslash-handling of its
+    own -- it delegates straight to pathlib.Path, which only treats '\\' as a
+    separator on Windows. That is stdlib platform behaviour, not a bug in this
+    module, so it is only meaningfully testable on win32.
+    """
+    work = tmp_path / "工作目录"
+    work.mkdir()
+    _file(work, "九月工时.csv", "地点,日期\n北区,2026-09-02\n")
+
+    windows_style = str(work).replace("/", "\\")
+    result = _scan(windows_style)
+
+    assert result.entry("九月工时.csv").disposition == INCLUDE
 
 
 def test_override_is_applied_and_saved_as_a_reusable_recipe(tmp_path):
