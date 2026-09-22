@@ -16,6 +16,13 @@ from openpyxl.utils import get_column_letter
 
 from .cells import column_number, is_merged_non_anchor, is_protected_formula_value
 from .naming import ResolvedOutput, resolve_output_path
+from .number_formats import (
+    FormatPolicy,
+    NumberFormatPolicyError,
+    ResolvedFieldFormat,
+    policy_manifest,
+    resolve_format_policy,
+)
 
 
 class TemplateWriteError(ValueError):
@@ -34,6 +41,7 @@ class TemplateMapping:
     style_source_row: int | None = None
     max_rows: int | None = None
     overwrite_formulas: bool = False
+    format_policy: FormatPolicy | None = None
 
     def __post_init__(self) -> None:
         if not self.sheet.strip():
@@ -47,6 +55,12 @@ class TemplateMapping:
         columns = [_column_number(value) for value in self.field_columns.values()]
         if len(columns) != len(set(columns)):
             raise TemplateWriteError("field_columns must map to distinct columns")
+        if self.format_policy is not None:
+            missing = sorted(set(self.format_policy.fields) - set(self.field_columns))
+            if missing:
+                raise TemplateWriteError(
+                    "format policy fields must be mapped columns: " + ", ".join(missing)
+                )
 
 
 @dataclass(frozen=True)
@@ -68,6 +82,16 @@ class TemplateSkip:
 
 
 @dataclass(frozen=True)
+class TemplateFormatChange:
+    sheet: str
+    cell: str
+    field: str
+    row_index: int
+    previous_format: str
+    new_format: str
+
+
+@dataclass(frozen=True)
 class TemplateWriteResult:
     template_path: Path
     output_path: Path
@@ -76,6 +100,8 @@ class TemplateWriteResult:
     changes: tuple[TemplateChange, ...] = field(default_factory=tuple)
     skipped: tuple[TemplateSkip, ...] = field(default_factory=tuple)
     naming: ResolvedOutput | None = None
+    format_changes: tuple[TemplateFormatChange, ...] = field(default_factory=tuple)
+    format_policy: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +114,9 @@ class TemplateWriteResult:
             "skipped_items": len(self.skipped),
             "changes": [asdict(item) for item in self.changes],
             "skipped": [asdict(item) for item in self.skipped],
+            "formatted_cells": len(self.format_changes),
+            "format_changes": [asdict(item) for item in self.format_changes],
+            "format_policy": dict(self.format_policy),
             "naming": self.naming.to_dict() if self.naming else None,
         }
 
@@ -117,6 +146,16 @@ def write_template(
     if source.suffix.lower() not in {".xlsx", ".xlsm"}:
         raise TemplateWriteError("template must be an .xlsx or .xlsm workbook")
 
+    materialized = list(records)
+    try:
+        resolved_formats = (
+            resolve_format_policy(mapping.format_policy, materialized)
+            if mapping.format_policy is not None
+            else {}
+        )
+    except NumberFormatPolicyError as error:
+        raise TemplateWriteError(f"{error.code}: {error}") from error
+
     destination, naming = _destination(
         source,
         output_path=output_path,
@@ -142,7 +181,7 @@ def write_template(
     worksheet = workbook[mapping.sheet]
     changes: list[TemplateChange] = []
     skipped: list[TemplateSkip] = []
-    materialized = list(records)
+    format_changes: list[TemplateFormatChange] = []
     if mapping.max_rows is not None and len(materialized) > mapping.max_rows:
         workbook.close()
         destination.unlink(missing_ok=True)
@@ -172,12 +211,30 @@ def write_template(
             previous = cell.value
             new_value = values[field_name]
             cell.value = new_value
+            if field_name in resolved_formats:
+                previous_format = cell.number_format
+                cell.number_format = resolved_formats[field_name].number_format
+                format_changes.append(
+                    TemplateFormatChange(
+                        mapping.sheet,
+                        coordinate,
+                        field_name,
+                        record_index,
+                        previous_format,
+                        cell.number_format,
+                    )
+                )
             changes.append(
                 TemplateChange(mapping.sheet, coordinate, field_name, record_index, previous, new_value)
             )
 
     workbook.save(destination)
     workbook.close()
+    try:
+        _verify_number_formats(destination, mapping, materialized, resolved_formats)
+    except TemplateWriteError:
+        destination.unlink(missing_ok=True)
+        raise
     result = TemplateWriteResult(
         template_path=source,
         output_path=destination.resolve(),
@@ -185,6 +242,8 @@ def write_template(
         mapping=mapping,
         changes=tuple(changes),
         skipped=tuple(skipped),
+        format_changes=tuple(format_changes),
+        format_policy=policy_manifest(mapping.format_policy, resolved_formats),
         naming=naming,
     )
     _write_change_log(result)
@@ -247,6 +306,48 @@ def _copy_style(source: Any, destination: Any) -> None:
         destination._style = copy(source._style)
     if source.number_format:
         destination.number_format = source.number_format
+
+
+def _verify_number_formats(
+    path: Path,
+    mapping: TemplateMapping,
+    records: list[Mapping[str, Any] | object],
+    resolved: Mapping[str, ResolvedFieldFormat],
+) -> None:
+    """Reopen the persisted workbook and verify values and display formats."""
+
+    if not resolved:
+        return
+    workbook = load_workbook(path, data_only=False, read_only=True)
+    try:
+        worksheet = workbook[mapping.sheet]
+        for row_index, raw_record in enumerate(records):
+            values = _record_values(raw_record)
+            row = mapping.data_start_row + row_index
+            for field_name, rule in resolved.items():
+                if field_name not in values or values[field_name] is None:
+                    continue
+                column = _column_number(mapping.field_columns[field_name])
+                cell = worksheet.cell(row, column)
+                if cell.number_format != rule.number_format:
+                    raise TemplateWriteError(
+                        f"number_format_verification_failed: {cell.coordinate} persisted "
+                        f"{cell.number_format!r}, expected {rule.number_format!r}"
+                    )
+                if not _same_numeric_value(values[field_name], cell.value):
+                    raise TemplateWriteError(
+                        f"numeric_value_verification_failed: {cell.coordinate} changed while formatting"
+                    )
+    finally:
+        workbook.close()
+
+
+def _same_numeric_value(expected: Any, actual: Any) -> bool:
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return expected == actual
+    if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+        return float(expected) == float(actual)
+    return expected == actual
 
 
 def _write_change_log(result: TemplateWriteResult) -> None:

@@ -136,6 +136,13 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 - **安全边界：** 不复制任何单元格值、record ID 或验证 finding 的消息文本——只带文件名、内容哈希、工作表名、声明的字段名与整数计数；只有真正交付了文件的目标才会生成 Manifest，计划、dry run 或验证失败的目标都不会；运行计数器与真实文件不一致时会被记为具名的 discrepancy，而不是被抹平。
 - **实现：** [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) / [详细文档](delivery-manifest.zh-CN.md)
 
+### 17. 语义化数字格式、币种与精度
+
+- **做什么：** 为金额、汇率、工时、人数、百分比和税率解析工作簿默认值与字段级覆盖；支持 CAD、USD、CNY、EUR，以及普通、红色、括号和会计式负数显示。
+- **输出与证据：** 在模板写回时应用格式，重新打开落盘文件核对数值和格式，并在变更日志与交付 Manifest 中记录实际币种、显示/存储/计算精度、舍入声明和负数样式。
+- **安全边界：** 显示格式永不舍入或替换存储值；含糊符号、混合币种或规则冲突会作为格式策略歧义阻断计划；策略外字段保留企业模板样式。
+- **实现：** [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) / [详细文档](number-format-policy.zh-CN.md)
+
 ## 当前可以组合到什么程度
 
 当前模块已经覆盖 Phase 1 本地闭环的全部环节：
@@ -151,7 +158,7 @@ ingest → normalize/type inference → schema check → strict match → ambigu
 ## 尚未实现或尚未形成完整闭环
 
 - [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) 的云端目标 revision 冲突处理。运行级指纹与 no-op 短路已实现（能力 15），但在真正的云端连接器出现之前，revision 冲突检查只是一个向前兼容的接口；
-- [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) 币种与精度、[Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
+- [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
 - 公式重算证据，需要 Excel 或 LibreOffice，openpyxl 无法提供；
 - 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；
 - Prompt 驱动的 append、join、多 Tab delivery grouping、汇总和透视表；

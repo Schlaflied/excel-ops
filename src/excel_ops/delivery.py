@@ -73,6 +73,12 @@ from .idempotency import (
 from .ingestion import LayoutDetectionError, load_input_records
 from .matching import Destination, MatchResult, preallocate_records, stable_record_id
 from .models import ExtractedRecord
+from .number_formats import (
+    FormatPolicy,
+    NumberFormatPolicyError,
+    policy_manifest,
+    resolve_format_policy,
+)
 from .periods import PeriodResult
 from .review import review_record
 from .template_writer import (
@@ -306,6 +312,7 @@ class TargetOutcome:
     skipped_writes: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     findings: tuple[VerificationFinding, ...] = field(default_factory=tuple)
     status: str = "planned"
+    format_policy: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -321,6 +328,7 @@ class TargetOutcome:
             "written_cells": self.written_cells,
             "skipped_writes": [dict(item) for item in self.skipped_writes],
             "findings": [asdict(item) for item in self.findings],
+            "format_policy": dict(self.format_policy),
         }
 
 
@@ -666,6 +674,7 @@ def _mapping_payload(targets: Sequence[DeliveryTarget]) -> list[dict[str, Any]]:
             "style_source_row": target.mapping.style_source_row,
             "max_rows": target.mapping.max_rows,
             "overwrite_formulas": target.mapping.overwrite_formulas,
+            "format_policy": policy_manifest(target.mapping.format_policy),
             "record_id_field": target.record_id_field,
             "required_fields": sorted(target.required_fields),
         }
@@ -1252,6 +1261,7 @@ def _build_plan(
 ) -> tuple[DeliveryPlan, dict[str, set[str]]]:
     planned: list[PlannedTarget] = []
     blocking: list[str] = []
+    format_ambiguities: list[str] = []
     existing: dict[str, set[str]] = {}
     for target in targets:
         template = Path(target.template_path)
@@ -1265,7 +1275,19 @@ def _build_plan(
         known = _existing_record_ids(delivery_path, target)
         existing[target.key] = known
         skipped = [item for item in accepted if item.record_id in known]
-        blockers = _target_blockers(target)
+        blockers = list(_target_blockers(target))
+        if target.mapping.format_policy is not None:
+            try:
+                resolve_format_policy(
+                    target.mapping.format_policy,
+                    [item.values for item in accepted if item.status == ACCEPTED],
+                )
+            except NumberFormatPolicyError as error:
+                item = f"format_policy:{target.key}:{error.code}"
+                if error.field_name:
+                    item += f":{error.field_name}"
+                blockers.append(item)
+                format_ambiguities.append(item)
         blocking.extend(blockers)
         writable_rows = len(accepted) - len(skipped)
         protected_cells, protected_rows = _predicted_protected_cells(
@@ -1289,7 +1311,7 @@ def _build_plan(
                 blocking_items=tuple(blockers),
             )
         )
-    unresolved = batch.unresolved_blockers
+    unresolved = (*batch.unresolved_blockers, *format_ambiguities)
     plan = DeliveryPlan(
         tuple(str(item) for item in inputs),
         _counts(outcomes),
@@ -1483,6 +1505,7 @@ def _write_and_verify(
                 tuple(asdict(item) for item in write_result.skipped),
                 verification.findings,
                 "delivered",
+                write_result.format_policy,
             )
         )
 
@@ -1520,6 +1543,7 @@ def load_delivery_targets(
     if not isinstance(raw_targets, list) or not raw_targets:
         raise DeliveryPlanError("configuration must contain a non-empty targets array")
     targets: list[DeliveryTarget] = []
+    workbook_format_policy = payload.get("format_policy")
     for raw in raw_targets:
         if not isinstance(raw, Mapping):
             raise DeliveryPlanError("each target must be an object")
@@ -1529,6 +1553,15 @@ def load_delivery_targets(
         field_columns = raw.get("field_columns")
         if not isinstance(field_columns, Mapping) or not field_columns:
             raise DeliveryPlanError(f"target {key} needs field_columns")
+        raw_format_policy = raw.get("format_policy", workbook_format_policy)
+        try:
+            format_policy = (
+                FormatPolicy.from_mapping(raw_format_policy)
+                if isinstance(raw_format_policy, Mapping)
+                else None
+            )
+        except NumberFormatPolicyError as error:
+            raise DeliveryPlanError(f"target {key} format_policy: {error}") from error
         mapping = TemplateMapping(
             sheet=str(raw.get("sheet") or ""),
             field_columns=dict(field_columns),
@@ -1537,6 +1570,7 @@ def load_delivery_targets(
             template_type=str(raw.get("template_type", "table")),
             style_source_row=raw.get("style_source_row"),
             max_rows=raw.get("max_rows"),
+            format_policy=format_policy,
         )
         expectations = tuple(
             PeriodExpectation(
