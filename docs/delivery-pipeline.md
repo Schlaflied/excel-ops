@@ -38,6 +38,10 @@ ingest (xlsx / csv / extraction JSON)
   `incomplete_write` instead of publishing a half-written row.
 - **Every delivered cell is traceable** to its source file, sheet and row or
   image region, and to a stable record ID.
+- **Every delivered output carries a Manifest.** `result.manifests` records
+  which sources, template and Recipe version produced it, a per-tab
+  breakdown, and the persisted file's own content hash and row counts — see
+  [Delivery manifests](delivery-manifest.md).
 
 ## Declaring a target
 
@@ -169,8 +173,7 @@ A successful `--dry-run` always exits with status 0, even when `delivered` is `f
   records the target already holds. The cloud-target revision conflict check
   from [#19](https://github.com/Schlaflied/excel-ops/issues/19) is a
   forward-compatible interface, not a working cloud connector.
-- Source and verification Manifests ([#20](https://github.com/Schlaflied/excel-ops/issues/20)),
-  currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23)),
+- Currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23))
   and multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)).
 - Cloud connectors, multi-tab orchestration, cross-source fact checking, and
   regional rule calculations.

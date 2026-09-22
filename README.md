@@ -72,6 +72,8 @@ excel-ops deliver delivery-plan.json             # write a staging copy, verify 
 
 See [End-to-end delivery pipeline](docs/delivery-pipeline.md) for the target declaration, the plan contract, the failure codes, and what is deliberately left out.
 
+Every delivered output also gets a source-and-verification Manifest — which inputs, template, and Recipe version produced it, a per-tab breakdown, and the persisted file's own hash and row counts, re-verified against the real file rather than only the run's counters. See [Delivery manifests](docs/delivery-manifest.md).
+
 See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [Connector contract](docs/connectors.md) for local and cloud spreadsheet behavior.
 
 See [Batch ambiguity confirmation and Recipes](docs/ambiguity-recipes.md) for grouped decisions, run/project scopes, and conflict handling.
@@ -141,7 +143,7 @@ Merged modules, repository tests, and a verified persisted file are separate kin
 
 [See the complete capability ledger, implementation status, safety boundaries, and linked issues/PRs](docs/capabilities.md).
 
-Still out of scope on `main`: full cross-run idempotency fingerprinting ([#19](https://github.com/Schlaflied/excel-ops/issues/19)), source and verification Manifests ([#20](https://github.com/Schlaflied/excel-ops/issues/20)), currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23)), multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)), and every cloud connector.
+Still out of scope on `main`: full cross-run idempotency fingerprinting ([#19](https://github.com/Schlaflied/excel-ops/issues/19)), currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23)), multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)), and every cloud connector.
 
 ## License
 

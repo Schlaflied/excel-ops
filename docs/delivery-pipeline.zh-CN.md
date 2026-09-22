@@ -24,6 +24,7 @@
 - **未解决的问题不会进入 Accepted。** pending / unknown / conflict 状态的歧义、模糊候选、冲突和重复 record ID 全部进入复核，不会被自动写入。
 - **不交付写了一半的行。** 如果写入器跳过了已映射单元格（受保护公式、非锚点合并单元格），运行以 `incomplete_write` 失败关闭，而不是发布半行数据。
 - **每个交付单元格都可追溯**到源文件、工作表与行号或图片区域，以及稳定 record ID。
+- **每个交付输出都带有一份 Manifest。** `result.manifests` 记录了产出它的来源、模板与 Recipe 版本、逐 tab 明细，以及落盘文件自身的内容哈希与真实行数——见[交付 Manifest](delivery-manifest.zh-CN.md)。
 
 ## 声明一个目标
 
@@ -138,6 +139,6 @@ excel-ops deliver delivery-plan.json --recipe recipes/project-recipe.json --resu
 ## 本流程不覆盖的范围
 
 - 整次运行的幂等是可选开启的，并且放在独立模块里：传 `idempotency=IdempotencyOptions(...)`（或 `excel-ops deliver --run-state`），成功运行在没有变化时重跑会在任何匹配、写入与验证发生之前短路为 no-op，见[幂等执行](idempotency.zh-CN.md)。不开启时流程按本页描述运行：重跑同一份已确认输入仍会重新摄取、重新匹配、重新计划，再由按记录去重把目标已包含的记录挡下来。[#19](https://github.com/Schlaflied/excel-ops/issues/19) 里的云端目标 revision 冲突检查是向前兼容的接口，不是可用的云端连接器。
-- 来源与验证 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、币种与精度（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）。
+- 币种与精度（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）。
 - 云端连接器、多 Tab 编排、跨来源事实判断、地区法规计算。
 - openpyxl 不做公式计算。声明的公式检查是静态的，运行会显式报告 `recalculation_not_verified` 警告，而不是声称工作簿已重算。

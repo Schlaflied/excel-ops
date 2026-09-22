@@ -68,6 +68,8 @@ excel-ops deliver delivery-plan.json             # 写入 staging 副本，验�
 
 目标声明、计划合同、失败码以及刻意不做的部分见[端到端交付流程](docs/delivery-pipeline.zh-CN.md)。
 
+每个交付输出还会各带一份来源与验证 Manifest——记录产出它的输入、模板与 Recipe 版本、逐 tab 明细，以及落盘文件自身的哈希与真实行数，并与真实文件重新核对，而不只依赖运行时计数器。见[交付 Manifest](docs/delivery-manifest.zh-CN.md)。
+
 对话约定见 [Agent 工作流](docs/agent-workflow.zh-CN.md)；本地和云端表格的行为见[连接器合同](docs/connectors.zh-CN.md)。
 
 字段级批量确认、本次运行/项目作用域和冲突重确认见[批量歧义确认与 Recipe](docs/ambiguity-recipes.zh-CN.md)。

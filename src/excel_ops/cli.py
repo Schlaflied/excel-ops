@@ -49,6 +49,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             "--template-profile-version",
             help="Template Profile version marker folded into the run fingerprint",
         )
+        deliver.add_argument(
+            "--no-manifest",
+            action="store_true",
+            help=(
+                "Do not write the <output>.manifest.json / .manifest.txt evidence files "
+                "next to each delivered workbook; the manifest is still returned in the result"
+            ),
+        )
         args = deliver.parse_args(arguments[1:])
         if args.task_key and args.run_state is None:
             deliver.error("--task-key requires --run-state")
@@ -64,7 +72,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 task_key=args.task_key,
                 template_profile_version=args.template_profile_version,
             )
-        result = run_delivery(inputs, targets, dry_run=args.dry_run, **options)
+        result = run_delivery(
+            inputs,
+            targets,
+            dry_run=args.dry_run,
+            write_manifest=not args.no_manifest,
+            **options,
+        )
         report = result.to_dict()
         if args.result:
             Path(args.result).write_text(

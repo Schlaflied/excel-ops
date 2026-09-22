@@ -29,6 +29,7 @@ from excel_ops.delivery import (
     plan_delivery,
     run_delivery,
 )
+from excel_ops.delivery_manifest import load_delivery_manifest
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
 from excel_ops.idempotency import (
@@ -38,6 +39,7 @@ from excel_ops.idempotency import (
     RETRY,
     SUCCEEDED,
     IdempotencyOptions,
+    file_content_digest,
     load_run_record,
     state_path,
 )
@@ -361,6 +363,73 @@ def test_success_path_matches_the_real_persisted_file(tmp_path: Path):
     assert report["passed"] is True
     assert report["delivery_path"] == str(delivered)
     assert report["counts"] == {"input": 2, "accepted": 2, "review": 0, "written": 2}
+
+
+def test_run_delivery_produces_a_correct_manifest_for_a_real_synthetic_delivery(tmp_path: Path):
+    """Issue #20, integration: the manifest ``run_delivery`` wires up end to end.
+
+    Uses the same three-input, two-target, two-layout-plus-extraction-JSON
+    scenario as the rest of this module (real xlsx/csv/json inputs, a
+    duplicate-region merge, a rejected record) and checks the manifest
+    ``run_delivery`` actually attaches -- not a hand-built one -- against the
+    real persisted files.
+    """
+
+    scenario = _scenario(tmp_path)
+
+    result = _run(scenario)
+
+    assert result.delivered is True
+    manifests = {item.destination_key: item for item in result.manifests}
+    assert set(manifests) == {NORTH, MAPLE}
+
+    for key, manifest in manifests.items():
+        target = next(item for item in result.targets if item.destination_key == key)
+        delivered = Path(target.delivery_path)
+        assert manifest.output == str(delivered)
+        assert manifest.output_name == delivered.name
+        assert manifest.output_hash == file_content_digest(delivered)
+        assert manifest.verification.status == "passed"
+        assert manifest.verification.passed is True
+        assert manifest.reconciled is True
+        assert manifest.discrepancies == ()
+
+        # Sources: only the inputs that actually contributed to this output,
+        # each identified by its real content hash.
+        contributing = {item.file: item for item in manifest.sources}
+        for path in contributing:
+            source_path = next(p for p in scenario["inputs"] if p.name == path)
+            assert contributing[path].hash == file_content_digest(source_path)
+        assert sum(item.written for item in manifest.sources) == manifest.written
+
+    north = manifests[NORTH]
+    maple = manifests[MAPLE]
+    assert [tab.sheet for tab in north.tabs] == ["北区"]
+    assert [tab.sheet for tab in maple.tabs] == ["Upload"]
+    assert north.tabs[0].written == north.tabs[0].rows == 2
+    assert maple.tabs[0].written == maple.tabs[0].rows == 2
+    # The duplicate extraction region collapsed to one record, and each
+    # written record landed on exactly one of the two outputs.
+    assert north.written + maple.written == result.counts[WRITTEN] == 4
+
+    # Template/recipe versions are content hashes of what was really used.
+    assert north.template_version == file_content_digest(scenario["north"])
+    assert maple.template_version == file_content_digest(scenario["client"])
+    assert north.recipe_version == maple.recipe_version  # no recipe supplied
+
+    # Period expectations declared on the North target surface in its manifest.
+    assert north.period_display_text is None  # no PeriodResult was passed in
+
+    # Both forms were written next to the real delivered files, and reload.
+    for manifest in manifests.values():
+        assert manifest.manifest_path().parent == Path(manifest.output).parent
+        reloaded = load_delivery_manifest(manifest.manifest_path())
+        assert reloaded["output_hash"] == manifest.output_hash
+        assert reloaded["reconciled"] is True
+        assert manifest.readable_path().is_file()
+
+    _assert_originals_untouched(scenario)
+    json.dumps(result.to_dict())
 
 
 def test_every_written_cell_is_traceable_to_source_and_record_id(tmp_path: Path):
@@ -1127,6 +1196,45 @@ def test_a_changed_review_decision_does_not_short_circuit(tmp_path: Path):
     assert "confirmations" in third.run_decision.changed_components
 
 
+def test_a_this_run_decision_changes_the_recorded_recipe_version(tmp_path: Path):
+    """A ``this-run``-scoped decision can change what gets delivered, so it must
+    never be excluded from ``recipe_version`` -- otherwise two runs delivered
+    under genuinely different effective rules could share the same version."""
+
+    from excel_ops.ambiguity import RecipeDecision
+
+    def _this_run_decision(selected: str) -> RecipeDecision:
+        return RecipeDecision(
+            field="synthetic-field",
+            question="which value applies to this run only?",
+            selected=selected,
+            scope="this-run",
+            source="test",
+            decided_at="2026-09-14T00:00:00+00:00",
+            candidates=("alpha", "beta"),
+        )
+
+    dir_a = tmp_path / "a"
+    dir_a.mkdir()
+    dir_b = tmp_path / "b"
+    dir_b.mkdir()
+    scenario_a = _scenario(dir_a)
+    scenario_b = _scenario(dir_b)
+
+    run_a = _run(scenario_a, decisions=[_this_run_decision("alpha")])
+    run_b = _run(scenario_b, decisions=[_this_run_decision("beta")])
+
+    assert run_a.delivered is True
+    assert run_b.delivered is True
+    assert run_a.manifests and run_b.manifests
+
+    manifests_a = {item.destination_key: item for item in run_a.manifests}
+    manifests_b = {item.destination_key: item for item in run_b.manifests}
+    assert set(manifests_a) == set(manifests_b)
+    for key in manifests_a:
+        assert manifests_a[key].recipe_version != manifests_b[key].recipe_version
+
+
 def test_a_blocked_run_is_never_recorded_as_a_successful_no_op_baseline(tmp_path: Path):
     scenario = _scenario(tmp_path)
     options = _idempotent()
@@ -1187,6 +1295,62 @@ def test_a_failed_verification_is_recorded_as_failed_and_the_next_run_retries(tm
     assert retried.delivered is True
     assert _run(scenario, idempotency=options).no_op is True
     _assert_originals_untouched(scenario)
+
+
+def test_a_manifest_write_failure_is_recorded_as_failed_and_the_next_run_retries(
+    tmp_path: Path, monkeypatch
+):
+    from excel_ops.delivery_manifest import write_delivery_manifests as _real_write_delivery_manifests
+
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    def _boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("excel_ops.delivery.write_delivery_manifests", _boom)
+    failed = _run(scenario, idempotency=options)
+
+    # (a) the manifest-write failure is reported as a real failure, never a
+    # silent success: the workbook was delivered, but the manifest was not.
+    assert failed.delivered is False
+    assert failed.manifests == ()
+    assert any(item.code == "manifest_write_failed" for item in failed.failures)
+
+    # (b) the idempotency record must not be marked SUCCEEDED for this
+    # fingerprint -- otherwise a later identical run would see a matching
+    # baseline and skip regenerating the manifest forever.
+    record = load_run_record(state_path(scenario["delivery"]), TASK_KEY)
+    assert record is not None
+    assert record.status == FAILED
+    assert record.successful is False
+
+    # (c) with the write failure lifted, a subsequent identical run must
+    # retry -- never short-circuit to a no-op -- and this time it actually
+    # produces the manifest.
+    monkeypatch.setattr(
+        "excel_ops.delivery.write_delivery_manifests", _real_write_delivery_manifests
+    )
+    retried = _run(scenario, idempotency=options)
+
+    assert retried.no_op is False
+    assert retried.run_decision.decision == RETRY
+    assert retried.delivered is True
+    # The write failure is gone: nothing about this retry is still broken.
+    assert retried.failures == ()
+    assert _run(scenario, idempotency=options).no_op is True
+
+    # With genuinely new work to do, a retry regenerates the manifest that the
+    # first attempt never got to persist.
+    extra = Path(scenario["inputs"][1])
+    extra.write_text(
+        extra.read_text(encoding="utf-8") + f"routine,AS-900,{NORTH},2026-09-12,0.98\n",
+        encoding="utf-8",
+    )
+    healed = _run(scenario, idempotency=options)
+    assert healed.no_op is False
+    assert healed.delivered is True
+    assert healed.manifests
 
 
 def test_a_dry_run_reports_the_verdict_without_short_circuiting(tmp_path: Path):
