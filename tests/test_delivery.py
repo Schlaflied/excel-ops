@@ -31,6 +31,16 @@ from excel_ops.delivery import (
 )
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
+from excel_ops.idempotency import (
+    CHANGED,
+    FAILED,
+    NO_OP,
+    RETRY,
+    SUCCEEDED,
+    IdempotencyOptions,
+    load_run_record,
+    state_path,
+)
 from excel_ops.matching import Destination, MatchCandidate, MatchResult
 from excel_ops.models import ExtractedRecord
 from excel_ops.template_writer import TemplateMapping
@@ -981,3 +991,290 @@ def test_ambiguity_key_merges_records_sharing_the_same_shape():
     assert len(merged) == 1
     assert merged[0].affected_count == 3
     assert set(records_by_key) == keys
+
+
+# --------------------------------------------------------------------------- #
+# Whole-run idempotency wiring (issue #19)
+#
+# These exercise the run-level short-circuit ABOVE the per-record deduplication
+# covered by test_rerunning_the_same_confirmed_input_appends_nothing: that one
+# still re-ingests, re-matches and re-plans before finding nothing to append,
+# while an idempotent rerun never gets that far.
+# --------------------------------------------------------------------------- #
+
+
+TASK_KEY = "周报-北区"
+
+
+def _idempotent() -> IdempotencyOptions:
+    return IdempotencyOptions(task_key=TASK_KEY, template_profile_version="profile-v1")
+
+
+def test_an_idempotent_rerun_short_circuits_to_a_no_op(tmp_path: Path, monkeypatch):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    first = _run(scenario, idempotency=options)
+    assert first.delivered is True
+    assert first.no_op is False
+    assert first.run_decision.decision == CHANGED
+    assert first.run_decision.reason == "no_previous_run"
+    delivered = {item.destination_key: Path(item.delivery_path) for item in first.targets}
+    before = {key: path.read_bytes() for key, path in delivered.items()}
+
+    # Nothing may be re-ingested, re-matched, re-written or re-verified: the
+    # only correct second run never reaches the pipeline at all.
+    def _never(*args, **kwargs):
+        raise AssertionError("an idempotent no-op must not redo the delivery work")
+
+    monkeypatch.setattr("excel_ops.delivery._ingest", _never)
+    second = _run(scenario, idempotency=options)
+
+    assert second.no_op is True
+    assert second.delivered is False
+    assert second.failures == ()
+    assert second.records == ()
+    assert second.counts[WRITTEN] == 0
+    assert {item.status for item in second.targets} == {NO_OP}
+    assert second.run_decision.decision == NO_OP
+    # The recorded fingerprint is the one recomputed *after* the delivery, so it
+    # already accounts for the output the first run produced; otherwise the
+    # output content hash could never match on a rerun.
+    baseline = load_run_record(state_path(scenario["delivery"]), TASK_KEY)
+    assert baseline.status == SUCCEEDED
+    assert second.fingerprint == baseline.fingerprint
+    assert second.fingerprint != first.run_decision.fingerprint.digest
+    assert "unchanged_since_successful_run" in second.run_decision.explain()
+    for key, path in delivered.items():
+        assert path.read_bytes() == before[key], "a no-op must not rewrite the delivery"
+    json.dumps(second.to_dict(), default=str)
+    _assert_originals_untouched(scenario)
+
+
+def test_a_changed_input_does_not_short_circuit(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    assert _run(scenario, idempotency=options).delivered is True
+
+    extra = Path(scenario["inputs"][1])
+    extra.write_text(
+        extra.read_text(encoding="utf-8") + f"routine,AS-007,{NORTH},2026-09-12,0.98\n",
+        encoding="utf-8",
+    )
+    second = _run(scenario, idempotency=options)
+
+    assert second.no_op is False
+    assert second.run_decision.decision == CHANGED
+    assert "inputs" in second.run_decision.changed_components
+    assert second.counts[WRITTEN] == 1, "only the new record is appended"
+
+
+def test_a_renamed_but_identical_input_still_short_circuits(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    assert _run(scenario, idempotency=options).delivered is True
+
+    original = Path(scenario["inputs"][1])
+    renamed = original.with_name("第38周-导出（副本）.csv")
+    renamed.write_bytes(original.read_bytes())
+    original.unlink()
+    scenario["inputs"] = [scenario["inputs"][0], renamed, scenario["inputs"][2]]
+    scenario["before"].pop(original)
+
+    second = _run(scenario, idempotency=options)
+
+    assert second.no_op is True
+
+
+def test_a_changed_template_does_not_short_circuit(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    assert _run(scenario, idempotency=options).delivered is True
+
+    template = Path(scenario["north"])
+    workbook = load_workbook(template)
+    try:
+        workbook["北区"]["A1"] = "合成巡检交付模板 v2"
+        workbook.save(template)
+    finally:
+        workbook.close()
+    scenario["before"][template] = template.read_bytes()
+
+    second = _run(scenario, idempotency=options)
+
+    assert second.no_op is False
+    assert "templates" in second.run_decision.changed_components
+
+
+def test_a_changed_review_decision_does_not_short_circuit(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    assert _run(scenario, idempotency=options).delivered is True
+    assert _run(scenario, idempotency=options).no_op is True
+
+    pending = plan_delivery(
+        scenario["inputs"],
+        scenario["targets"],
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+    ).confirmation_batch
+    question = next(item.ambiguity for item in pending.items)
+    confirmed = decide(question, MAPLE, scope="this-run")
+
+    third = _run(scenario, idempotency=options, decisions=[confirmed])
+
+    assert third.no_op is False, "a new human decision must never be a no-op"
+    assert "confirmations" in third.run_decision.changed_components
+
+
+def test_a_blocked_run_is_never_recorded_as_a_successful_no_op_baseline(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    broken = DeliveryTarget(
+        destination=Destination(NORTH, (NORTH,)),
+        template_path=scenario["north"],
+        mapping=TemplateMapping(
+            sheet="北区",
+            header_row=4,
+            data_start_row=5,
+            field_columns={"record_id": "A", "employee_salary": "B"},
+        ),
+    )
+
+    def _blocked():
+        return run_delivery(
+            scenario["inputs"],
+            [broken],
+            staging_dir=scenario["staging"],
+            delivery_dir=scenario["delivery"],
+            idempotency=options,
+        )
+
+    first = _blocked()
+    assert first.delivered is False
+    assert [item.code for item in first.failures] == ["plan_blocked"]
+
+    record = load_run_record(state_path(scenario["delivery"]), TASK_KEY)
+    assert record is not None
+    assert record.status == FAILED
+    assert record.successful is False
+
+    second = _blocked()
+
+    assert second.no_op is False, "a blocked run must never become a no-op baseline"
+    assert second.run_decision.decision == RETRY
+    assert [item.code for item in second.failures] == ["plan_blocked"]
+    _assert_originals_untouched(scenario)
+
+
+def test_a_failed_verification_is_recorded_as_failed_and_the_next_run_retries(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    def corrupt(staged: Path) -> None:
+        staged.write_bytes(b"not a workbook")
+
+    failed = _run(scenario, idempotency=options, post_stage_hook=corrupt)
+    assert failed.delivered is False
+    assert any(item.code == "verification_failed" for item in failed.failures)
+    record = load_run_record(state_path(scenario["delivery"]), TASK_KEY)
+    assert record.status == FAILED
+
+    retried = _run(scenario, idempotency=options)
+
+    assert retried.no_op is False
+    assert retried.run_decision.decision == RETRY
+    assert retried.delivered is True
+    assert _run(scenario, idempotency=options).no_op is True
+    _assert_originals_untouched(scenario)
+
+
+def test_a_dry_run_reports_the_verdict_without_short_circuiting(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    assert _run(scenario, idempotency=options).delivered is True
+
+    dry = plan_delivery(
+        scenario["inputs"],
+        scenario["targets"],
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+        idempotency=options,
+    )
+
+    assert dry.dry_run is True
+    assert dry.no_op is False, "a dry run still returns the full plan"
+    assert dry.run_decision.decision == NO_OP
+    assert dry.plan.targets, "the plan is still computed and checkable"
+    assert _run(scenario, idempotency=options).no_op is True
+
+
+def test_a_run_state_file_never_contains_a_raw_path_or_destination_name(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    assert _run(scenario, idempotency=_idempotent()).delivered is True
+
+    text = state_path(scenario["delivery"]).read_text(encoding="utf-8")
+
+    assert NORTH not in text and MAPLE not in text
+    assert "巡检模板" not in text
+    assert str(tmp_path) not in text
+
+
+def test_cli_run_state_turns_an_unchanged_rerun_into_a_successful_no_op(tmp_path: Path):
+    from excel_ops.cli import main
+
+    scenario = _scenario(tmp_path)
+    config = tmp_path / "delivery-plan.json"
+    config.write_text(
+        json.dumps(
+            {
+                "inputs": ["sources/weekly-export.csv"],
+                "staging_dir": "staging",
+                "delivery_dir": "delivery",
+                "targets": [
+                    {
+                        "key": MAPLE,
+                        "aliases": [MAPLE],
+                        "template": "templates/client-upload.xlsx",
+                        "sheet": "Upload",
+                        "header_row": 1,
+                        "data_start_row": 2,
+                        "field_columns": {
+                            "source": "A",
+                            "record_id": "B",
+                            "category": "C",
+                            "identifier": "D",
+                            "event_date": "E",
+                            "location": "F",
+                        },
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    result_path = tmp_path / "run.json"
+    command = [
+        "deliver",
+        str(config),
+        "--run-state",
+        "--task-key",
+        TASK_KEY,
+        "--result",
+        str(result_path),
+    ]
+
+    main(command)
+    first = json.loads(result_path.read_text(encoding="utf-8"))
+    assert first["delivered"] is True
+    assert first["no_op"] is False
+
+    # No SystemExit: an unchanged rerun is a success, not a failed delivery.
+    main(command)
+    second = json.loads(result_path.read_text(encoding="utf-8"))
+
+    assert second["no_op"] is True
+    assert second["run_decision"]["decision"] == NO_OP
+    assert second["failures"] == []
+    _assert_originals_untouched(scenario)
