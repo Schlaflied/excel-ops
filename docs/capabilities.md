@@ -129,6 +129,13 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Not yet:** the cloud-target revision conflict check is a forward-compatible extension point with stub-backed tests, not a working cloud connector; the decision is whole-run, not per-record — the independent per-record deduplication in the delivery pipeline still decides what is appended.
 - **Implementation:** [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) / [Detailed guide](idempotency.md)
 
+### 16. Delivery manifests
+
+- **What it does:** builds one source-and-verification Manifest per delivered workbook from a completed `run_delivery(...)` call: content hash, record count and status breakdown per source input; a per-tab breakdown of written vs. re-counted rows; the template and project Recipe versions used; and the delivered file's own name, content hash, and #4 verification verdict. Wired into `run_delivery(...)` by default (`write_manifest=True`, `excel-ops deliver --no-manifest` to opt out).
+- **Output and evidence:** one `<output>.manifest.json` and one `<output>.manifest.txt` beside every delivered file, plus `result.manifests` on the run result; row and source counts are read back from the persisted workbook, not only from the run's in-memory counters.
+- **Safety boundary:** no cell value, record ID, or verification finding message is ever copied in — only file names, content hashes, sheet names, declared field names, and integer counts; a Manifest is generated only for a target that actually delivered a file, never for a plan, a dry run, or a failed verification; a disagreement between the run's counters and the real file is reported as a named discrepancy instead of being smoothed over.
+- **Implementation:** [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) / [Detailed guide](delivery-manifest.md)
+
 ## What can currently be composed
 
 The current modules cover the full Phase 1 local loop:
@@ -144,7 +151,7 @@ This loop is exercised end to end against synthetic fixtures and judged by the r
 ## Not implemented or not yet complete end to end
 
 - cloud-target revision conflict handling for [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19). Run-level fingerprinting and the no-op short-circuit are implemented (capability 15), but the revision conflict check is only a forward-compatible interface until a real cloud connector exists;
-- [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) source and verification Manifests, [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) currency and precision rules, and [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
+- [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) currency and precision rules, and [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
 - recalculated-formula proof, which requires Excel or LibreOffice rather than openpyxl;
 - local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;
 - prompt-driven append, join, multi-tab delivery grouping, summaries, and pivot tables;

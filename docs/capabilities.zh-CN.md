@@ -129,6 +129,13 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 - **尚未做到：** 云端目标 revision 冲突检查只是向前兼容的扩展点，带 stub 测试覆盖，并非可用的云端连接器；判定针对整次运行而非单条记录——实际追加什么仍由交付流程中独立的按记录去重决定。
 - **实现：** [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) / [详细文档](idempotency.zh-CN.md)
 
+### 16. 交付 Manifest
+
+- **做什么：** 从一次已完成的 `run_delivery(...)` 调用为每个交付工作簿各构建一份来源与验证 Manifest：每个来源输入的内容哈希、记录数与状态分布；逐 tab 的写入数 vs. 重新数出的真实行数；实际使用的模板与项目 Recipe 版本；以及交付文件自身的文件名、内容哈希与 #4 验证结论。默认已接入 `run_delivery(...)`（`write_manifest=True`，可用 `excel-ops deliver --no-manifest` 关闭）。
+- **输出与证据：** 每个交付文件旁边各一份 `<output>.manifest.json` 与 `<output>.manifest.txt`，运行结果上还带 `result.manifests`；行数与来源计数是从落盘工作簿重新读出的，而不只依赖运行时内存计数器。
+- **安全边界：** 不复制任何单元格值、record ID 或验证 finding 的消息文本——只带文件名、内容哈希、工作表名、声明的字段名与整数计数；只有真正交付了文件的目标才会生成 Manifest，计划、dry run 或验证失败的目标都不会；运行计数器与真实文件不一致时会被记为具名的 discrepancy，而不是被抹平。
+- **实现：** [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) / [详细文档](delivery-manifest.zh-CN.md)
+
 ## 当前可以组合到什么程度
 
 当前模块已经覆盖 Phase 1 本地闭环的全部环节：
@@ -144,7 +151,7 @@ ingest → normalize/type inference → schema check → strict match → ambigu
 ## 尚未实现或尚未形成完整闭环
 
 - [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) 的云端目标 revision 冲突处理。运行级指纹与 no-op 短路已实现（能力 15），但在真正的云端连接器出现之前，revision 冲突检查只是一个向前兼容的接口；
-- [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) 来源与验证 Manifest、[Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) 币种与精度、[Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
+- [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) 币种与精度、[Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
 - 公式重算证据，需要 Excel 或 LibreOffice，openpyxl 无法提供；
 - 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；
 - Prompt 驱动的 append、join、多 Tab delivery grouping、汇总和透视表；
