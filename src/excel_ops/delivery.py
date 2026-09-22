@@ -537,14 +537,6 @@ def run_delivery(
     delivered = bool(target_outcomes) and all(
         item.delivered or item.status == "no_new_records" for item in target_outcomes
     ) and not failures
-    if guard is not None:
-        guard.finish(
-            SUCCEEDED if delivered else FAILED,
-            delivered,
-            _counts(outcomes),
-            failures,
-            target_outcomes,
-        )
     run = DeliveryRun(
         delivered,
         False,
@@ -566,11 +558,46 @@ def run_delivery(
         run,
         targets,
         period=period,
-        recipe_decisions={**project_recipe, **project_decisions},
+        recipe_decisions={
+            **project_recipe,
+            **project_decisions,
+            **run_decisions,
+        },
         record_input_paths=record_inputs,
     )
     if write_manifest:
-        write_delivery_manifests(manifests)
+        try:
+            write_delivery_manifests(manifests)
+        except (OSError, ValueError) as error:
+            # A delivered workbook with an unwritten manifest is not a
+            # completed delivery.  The idempotency record must never say
+            # SUCCEEDED here: a matching fingerprint on the next run would
+            # otherwise short-circuit to a no-op and never regenerate the
+            # missing manifest.  Report it the same way every other failure
+            # in this function is reported, and let ``guard.finish`` record
+            # the failure so the next identical run is a ``retry``.
+            manifest_failure = DeliveryFailure(
+                "manifest_write_failed",
+                f"The delivery manifest could not be written: {error}",
+                "Check the delivery directory's permissions and re-run the delivery.",
+            )
+            failures = [*failures, manifest_failure]
+            if guard is not None:
+                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
+            return replace(
+                run,
+                delivered=False,
+                failures=tuple(failures),
+                manifests=(),
+            )
+    if guard is not None:
+        guard.finish(
+            SUCCEEDED if delivered else FAILED,
+            delivered,
+            _counts(outcomes),
+            failures,
+            target_outcomes,
+        )
     return replace(run, manifests=manifests)
 
 
