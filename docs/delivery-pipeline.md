@@ -159,12 +159,16 @@ A successful `--dry-run` always exits with status 0, even when `delivered` is `f
 
 ## Not covered by this pipeline
 
-- Cross-run idempotency fingerprinting remains
-  [#19](https://github.com/Schlaflied/excel-ops/issues/19). Re-running the same
-  confirmed input does not append duplicate records to a target that already
-  holds those record IDs, but the pipeline does not yet detect a changed value
-  for an already-delivered record, a renamed or moved delivery file, or a partial
-  interrupted run.
+- Whole-run idempotency is opt-in and lives in its own module: pass
+  `idempotency=IdempotencyOptions(...)` (or `excel-ops deliver --run-state`) and
+  an unchanged rerun of a successful run short-circuits to a no-op before any
+  matching, write or verification happens. See
+  [Idempotent execution](idempotency.md). Without it, the pipeline behaves as
+  described here: re-running the same confirmed input still re-ingests,
+  re-matches and re-plans, and the per-record deduplication then withholds the
+  records the target already holds. The cloud-target revision conflict check
+  from [#19](https://github.com/Schlaflied/excel-ops/issues/19) is a
+  forward-compatible interface, not a working cloud connector.
 - Source and verification Manifests ([#20](https://github.com/Schlaflied/excel-ops/issues/20)),
   currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23)),
   and multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)).
