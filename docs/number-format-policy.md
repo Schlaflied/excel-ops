@@ -37,7 +37,10 @@ override them; an explicit field rule therefore wins over a workbook default.
 style are separate policy metadata recorded in the change log and delivery
 Manifest. The writer never performs destructive rounding. It reopens the saved
 workbook and verifies both the numeric values and applied formats before the
-artifact can continue to delivery verification.
+artifact can continue to delivery verification. Integers above Excel's
+15-significant-digit reliability limit fail this verification instead of being
+reported as preserved after a lossy numeric write; identifier-like values must
+remain text.
 
 Negative styles are `standard`, `red`, `parentheses`, and `accounting`. Fields
 not named by the policy retain the enterprise template's existing style.

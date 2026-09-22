@@ -87,9 +87,11 @@ class FieldFormatPolicy:
         negative_style = str(payload.get("negative_style") or ("accounting" if style == "accounting" else "standard"))
         return cls(
             kind=kind,
-            display_decimals=int(decimals) if decimals is not None else None,
-            storage_decimals=_optional_int(payload.get("storage_decimals")),
-            calculation_decimals=_optional_int(payload.get("calculation_decimals")),
+            display_decimals=_precision(decimals, "display_decimals"),
+            storage_decimals=_precision(payload.get("storage_decimals"), "storage_decimals"),
+            calculation_decimals=_precision(
+                payload.get("calculation_decimals"), "calculation_decimals"
+            ),
             currency=str(payload["currency"]) if payload.get("currency") is not None else None,
             currency_display=str(payload.get("currency_display", "symbol")),
             negative_style=negative_style,
@@ -202,13 +204,24 @@ def build_number_format(rule: FieldFormatPolicy, *, currency: str | None = None)
     else:
         positive = numeric
 
+    if rule.negative_style == "accounting":
+        token = ""
+        accounting_numeric = zeros + "%" if rule.kind in {"percentage", "tax_rate"} else numeric
+        if rule.kind == "amount" and currency is not None:
+            rendered = currency if rule.currency_display == "code" else _CURRENCY_SYMBOLS[currency]
+            token = f'"{rendered}"'
+        return (
+            f'_({token}* {accounting_numeric}_);'
+            f'_({token}* \\({accounting_numeric}\\);'
+            f'_({token}* "-"??_);_(@_)'
+        )
     if rule.negative_style == "standard":
         negative = f"-{positive}"
     elif rule.negative_style == "red":
         negative = f"[Red]-{positive}"
     else:
         negative = f"({positive})"
-    return f"{positive};{negative};-"
+    return f"{positive};{negative};{positive}"
 
 
 def policy_manifest(
@@ -252,7 +265,15 @@ def _resolve_currency(
     observed: set[str] = set()
     if policy.currency_field:
         for row in rows:
-            if row.get(field_name) is None or row.get(policy.currency_field) in (None, ""):
+            if row.get(field_name) is None:
+                continue
+            if row.get(policy.currency_field) in (None, ""):
+                if declared is None:
+                    raise NumberFormatPolicyError(
+                        "currency_confirmation_required",
+                        f"field {field_name} has an amount with no currency",
+                        field_name=field_name,
+                    )
                 continue
             observed.add(_normalize_currency(str(row[policy.currency_field])))
     if len(observed) > 1:
@@ -304,8 +325,14 @@ def _infer_kind(field_name: str) -> str:
     )
 
 
-def _optional_int(value: Any) -> int | None:
-    return int(value) if value is not None else None
+def _precision(value: Any, name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise NumberFormatPolicyError(
+            "invalid_precision", f"{name} must be an integer from 0 to 15"
+        )
+    return value
 
 
 def _record_values(record: Mapping[str, Any] | object) -> Mapping[str, Any]:

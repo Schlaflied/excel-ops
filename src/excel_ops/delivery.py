@@ -98,6 +98,8 @@ CONTRACT_FIELDS = (
     "identifier",
     "category",
     "confidence",
+    "amount",
+    "currency",
     "source",
     "source_file",
     "source_sheet",
@@ -901,6 +903,8 @@ def _row_values(record_id: str, record: ExtractedRecord) -> dict[str, Any]:
         "identifier": record.identifier,
         "category": record.category,
         "confidence": record.confidence,
+        "amount": record.amount,
+        "currency": record.currency,
         "source": record.source,
         "source_file": record.source_file,
         "source_sheet": record.source_sheet,
@@ -1543,6 +1547,7 @@ def load_delivery_targets(
     if not isinstance(raw_targets, list) or not raw_targets:
         raise DeliveryPlanError("configuration must contain a non-empty targets array")
     targets: list[DeliveryTarget] = []
+    workbook_policy_supplied = "format_policy" in payload
     workbook_format_policy = payload.get("format_policy")
     for raw in raw_targets:
         if not isinstance(raw, Mapping):
@@ -1553,13 +1558,16 @@ def load_delivery_targets(
         field_columns = raw.get("field_columns")
         if not isinstance(field_columns, Mapping) or not field_columns:
             raise DeliveryPlanError(f"target {key} needs field_columns")
+        target_policy_supplied = "format_policy" in raw
+        policy_supplied = target_policy_supplied or workbook_policy_supplied
         raw_format_policy = raw.get("format_policy", workbook_format_policy)
         try:
-            format_policy = (
-                FormatPolicy.from_mapping(raw_format_policy)
-                if isinstance(raw_format_policy, Mapping)
-                else None
-            )
+            if not policy_supplied:
+                format_policy = None
+            elif isinstance(raw_format_policy, Mapping):
+                format_policy = FormatPolicy.from_mapping(raw_format_policy)
+            else:
+                raise DeliveryPlanError(f"target {key} format_policy must be an object")
         except NumberFormatPolicyError as error:
             raise DeliveryPlanError(f"target {key} format_policy: {error}") from error
         mapping = TemplateMapping(

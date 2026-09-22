@@ -345,8 +345,16 @@ def _verify_number_formats(
 def _same_numeric_value(expected: Any, actual: Any) -> bool:
     if isinstance(expected, bool) or isinstance(actual, bool):
         return expected == actual
-    if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        return float(expected) == float(actual)
+    if isinstance(expected, int):
+        if len(str(abs(expected))) > 15:
+            return False
+        if isinstance(actual, int):
+            return expected == actual
+        if isinstance(actual, float):
+            return actual.is_integer() and expected == int(actual)
+        return False
+    if isinstance(expected, float) and isinstance(actual, (int, float)):
+        return expected == float(actual)
     return expected == actual
 
 

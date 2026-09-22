@@ -64,6 +64,20 @@ def test_csv_layout_is_normalized(tmp_path: Path):
     assert records[0].source_row == 4
 
 
+def test_optional_amount_and_currency_flow_into_the_normalized_contract(tmp_path: Path):
+    path = tmp_path / "amounts.csv"
+    path.write_text(
+        "Location,Date,Asset ID,Category,Gross Pay,Currency Code\n"
+        "100 Example Avenue,2026-09-08,DEMO 123,routine,1234.50,CAD\n",
+        encoding="utf-8",
+    )
+
+    record = load_input_records(path)[0]
+
+    assert record.amount == 1234.5
+    assert record.currency == "CAD"
+
+
 def test_unrecognized_layout_stops_without_partial_output(tmp_path: Path):
     path = tmp_path / "unknown.xlsx"
     wb = Workbook()

@@ -27,4 +27,6 @@ Excel-Ops 将单元格存储数值与 Excel 显示格式分开。格式策略可
 
 `display_decimals`（或 `decimals`）只控制 Excel 显示格式。`storage_decimals`、`calculation_decimals`、`rounding`、币种和负数样式是彼此独立的策略元数据，会进入变更日志和交付 Manifest。写入器不会执行破坏性舍入；保存后会重新打开工作簿，核对真实数值和格式，再进入后续交付验证。
 
+超过 Excel 15 位有效数字可靠范围的整数会使验证失败，不会在有损数值写入后仍被声称为“已保留”；类似标识符的长数字应继续以文本存储。
+
 负数样式支持 `standard`、`red`、`parentheses` 和 `accounting`。策略未声明的字段继续保留企业模板原有样式。

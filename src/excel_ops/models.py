@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
@@ -16,6 +17,8 @@ class ExtractedRecord:
     source_sheet: str = ""
     source_row: int | None = None
     source_region: str = ""
+    amount: int | float | None = None
+    currency: str = ""
 
     @classmethod
     def from_dict(cls, value: dict[str, Any], source: str) -> "ExtractedRecord":
@@ -50,7 +53,26 @@ class ExtractedRecord:
             source_sheet=source_sheet,
             source_row=source_row,
             source_region=source_region,
+            amount=_amount(value.get("amount")),
+            currency=str(value.get("currency") or "").strip(),
         )
+
+
+def _amount(value: Any) -> int | float | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip().upper().replace(",", "")
+    for token in ("CA$", "US$", "CAD", "USD", "CNY", "EUR", "$", "¥", "￥", "€"):
+        text = text.replace(token, "")
+    try:
+        parsed = Decimal(text.strip())
+    except InvalidOperation:
+        return None
+    if not parsed.is_finite():
+        return None
+    return int(parsed) if parsed == parsed.to_integral_value() else float(parsed)
 
 
 @dataclass(frozen=True)
