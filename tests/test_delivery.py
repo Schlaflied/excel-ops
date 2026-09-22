@@ -29,6 +29,7 @@ from excel_ops.delivery import (
     plan_delivery,
     run_delivery,
 )
+from excel_ops.delivery_manifest import load_delivery_manifest
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
 from excel_ops.idempotency import (
@@ -38,6 +39,7 @@ from excel_ops.idempotency import (
     RETRY,
     SUCCEEDED,
     IdempotencyOptions,
+    file_content_digest,
     load_run_record,
     state_path,
 )
@@ -361,6 +363,73 @@ def test_success_path_matches_the_real_persisted_file(tmp_path: Path):
     assert report["passed"] is True
     assert report["delivery_path"] == str(delivered)
     assert report["counts"] == {"input": 2, "accepted": 2, "review": 0, "written": 2}
+
+
+def test_run_delivery_produces_a_correct_manifest_for_a_real_synthetic_delivery(tmp_path: Path):
+    """Issue #20, integration: the manifest ``run_delivery`` wires up end to end.
+
+    Uses the same three-input, two-target, two-layout-plus-extraction-JSON
+    scenario as the rest of this module (real xlsx/csv/json inputs, a
+    duplicate-region merge, a rejected record) and checks the manifest
+    ``run_delivery`` actually attaches -- not a hand-built one -- against the
+    real persisted files.
+    """
+
+    scenario = _scenario(tmp_path)
+
+    result = _run(scenario)
+
+    assert result.delivered is True
+    manifests = {item.destination_key: item for item in result.manifests}
+    assert set(manifests) == {NORTH, MAPLE}
+
+    for key, manifest in manifests.items():
+        target = next(item for item in result.targets if item.destination_key == key)
+        delivered = Path(target.delivery_path)
+        assert manifest.output == str(delivered)
+        assert manifest.output_name == delivered.name
+        assert manifest.output_hash == file_content_digest(delivered)
+        assert manifest.verification.status == "passed"
+        assert manifest.verification.passed is True
+        assert manifest.reconciled is True
+        assert manifest.discrepancies == ()
+
+        # Sources: only the inputs that actually contributed to this output,
+        # each identified by its real content hash.
+        contributing = {item.file: item for item in manifest.sources}
+        for path in contributing:
+            source_path = next(p for p in scenario["inputs"] if p.name == path)
+            assert contributing[path].hash == file_content_digest(source_path)
+        assert sum(item.written for item in manifest.sources) == manifest.written
+
+    north = manifests[NORTH]
+    maple = manifests[MAPLE]
+    assert [tab.sheet for tab in north.tabs] == ["北区"]
+    assert [tab.sheet for tab in maple.tabs] == ["Upload"]
+    assert north.tabs[0].written == north.tabs[0].rows == 2
+    assert maple.tabs[0].written == maple.tabs[0].rows == 2
+    # The duplicate extraction region collapsed to one record, and each
+    # written record landed on exactly one of the two outputs.
+    assert north.written + maple.written == result.counts[WRITTEN] == 4
+
+    # Template/recipe versions are content hashes of what was really used.
+    assert north.template_version == file_content_digest(scenario["north"])
+    assert maple.template_version == file_content_digest(scenario["client"])
+    assert north.recipe_version == maple.recipe_version  # no recipe supplied
+
+    # Period expectations declared on the North target surface in its manifest.
+    assert north.period_display_text is None  # no PeriodResult was passed in
+
+    # Both forms were written next to the real delivered files, and reload.
+    for manifest in manifests.values():
+        assert manifest.manifest_path().parent == Path(manifest.output).parent
+        reloaded = load_delivery_manifest(manifest.manifest_path())
+        assert reloaded["output_hash"] == manifest.output_hash
+        assert reloaded["reconciled"] is True
+        assert manifest.readable_path().is_file()
+
+    _assert_originals_untouched(scenario)
+    json.dumps(result.to_dict())
 
 
 def test_every_written_cell_is_traceable_to_source_and_record_id(tmp_path: Path):
