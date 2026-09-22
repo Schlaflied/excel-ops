@@ -72,6 +72,14 @@ excel-ops deliver delivery-plan.json             # 写入 staging 副本，验�
 
 字段级批量确认、本次运行/项目作用域和冲突重确认见[批量歧义确认与 Recipe](docs/ambiguity-recipes.zh-CN.md)。
 
+在读取任何文件之前，先弄清工作目录里哪些文件是本期输入：
+
+```bash
+excel-ops scan-workdir ./september --period-start 2026-09-01 --period-end 2026-09-30
+```
+
+扫描是只读的，只触碰你列出的目录，不会读取仍在写入或同步中的文件，也不会在 `final.xlsx` / `final (1).xlsx` / `final-final.xlsx` 之间替你选一个。见[工作目录扫描](docs/workdir-scan.zh-CN.md)；它尚未接入 `excel-ops deliver`。
+
 在追加、合并或写回前比较工作簿结构，见 [Schema Drift 检查](docs/schema-drift.zh-CN.md)。
 
 系统更新检查、显式确认的更新与回滚见 [Refresh](docs/refresh.zh-CN.md)。

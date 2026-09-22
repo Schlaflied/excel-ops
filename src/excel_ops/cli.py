@@ -4,11 +4,21 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 from .delivery import load_delivery_targets, run_delivery
 from .pipeline import run_pipeline
 from .schema_drift import save_confirmed_mapping, write_drift_report
+from .workdir import (
+    DEFAULT_STABILITY_WINDOW_SECONDS,
+    ClassificationOverride,
+    PeriodWindow,
+    ScanScope,
+    format_dry_run,
+    save_workdir_recipe,
+    scan_workdir,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -37,6 +47,80 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(json.dumps(report, ensure_ascii=False, default=str))
         if result.failures or (not args.dry_run and not result.delivered):
             sys.exit(1)
+        return
+
+    if arguments and arguments[0] == "scan-workdir":
+        scan = argparse.ArgumentParser(
+            description="Read-only scan of authorized working directories: what is included, excluded, and why"
+        )
+        scan.add_argument("directory", help="An authorized directory to scan")
+        scan.add_argument(
+            "--also-allow",
+            action="append",
+            default=[],
+            metavar="DIR",
+            help="Additional authorized directory; nothing outside the allowlist is accessed",
+        )
+        scan.add_argument("--no-recursive", action="store_true", help="Scan only the top level of each root")
+        scan.add_argument("--period-start", help="Current business period start, YYYY-MM-DD")
+        scan.add_argument("--period-end", help="Current business period end, YYYY-MM-DD")
+        scan.add_argument(
+            "--stability-window",
+            type=float,
+            default=DEFAULT_STABILITY_WINDOW_SECONDS,
+            help="Seconds a file's size and modification time must already be unchanged",
+        )
+        scan.add_argument("--recipe", help="Workdir Recipe JSON with saved classification overrides")
+        scan.add_argument(
+            "--override",
+            action="append",
+            default=[],
+            metavar="PATH=CLASSIFICATION[:DISPOSITION]",
+            help="Override one relative path or glob; repeatable",
+        )
+        scan.add_argument("--save-recipe", help="Write the supplied overrides to a reusable Recipe file")
+        scan.add_argument("--result", help="Write the machine-readable scan report to this JSON file")
+        scan.add_argument("--json", action="store_true", help="Print JSON instead of the readable dry-run report")
+        args = scan.parse_args(arguments[1:])
+        if bool(args.period_start) != bool(args.period_end):
+            scan.error("--period-start and --period-end must be supplied together")
+        window = None
+        if args.period_start:
+            window = PeriodWindow.of(
+                date.fromisoformat(args.period_start), date.fromisoformat(args.period_end)
+            )
+        overrides = []
+        for value in args.override:
+            if "=" not in value:
+                scan.error("--override must use PATH=CLASSIFICATION[:DISPOSITION]")
+            target, decision = value.split("=", 1)
+            classification, _, disposition = decision.partition(":")
+            overrides.append(
+                ClassificationOverride(
+                    path=target.strip(),
+                    classification=classification.strip(),
+                    disposition=disposition.strip() or None,
+                    source="cli",
+                )
+            )
+        scope = ScanScope.of(
+            [args.directory, *args.also_allow], recursive=not args.no_recursive
+        )
+        result = scan_workdir(
+            scope,
+            period_window=window,
+            stability_window_seconds=args.stability_window,
+            overrides=overrides,
+            recipe_path=args.recipe,
+        )
+        if args.save_recipe:
+            save_workdir_recipe(overrides, args.save_recipe)
+        report = result.to_dict()
+        if args.result:
+            Path(args.result).write_text(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        print(json.dumps(report, ensure_ascii=False) if args.json else format_dry_run(result))
         return
 
     if arguments and arguments[0] == "schema-drift":

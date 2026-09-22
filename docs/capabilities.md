@@ -113,6 +113,14 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Safety boundary:** a save is never reported as a delivery — only a target whose reopened file passed verification is published; unresolved ambiguities, conflicts, and duplicates never reach accepted; a skipped mapped cell fails the run closed instead of delivering a partial row; inputs and templates stay unmodified.
 - **Implementation:** [Issue #46](https://github.com/Schlaflied/excel-ops/issues/46) / [Detailed guide](delivery-pipeline.md)
 
+### 14. Working-directory scan and current-period file selection
+
+- **What it does:** scans an explicit allowlist of directories and classifies every file as `input`, `template`, `prior_delivery`, `review_return`, or `unknown` from its extension, filename, modification time, content hash, and workbook metadata; groups byte-identical duplicates and look-alike version candidates; reports include/review/exclude with a reason per file; also exposed as `excel-ops scan-workdir`.
+- **Output and evidence:** one JSON-serializable report with the classification, disposition, reason, and deciding signal for every file, the duplicate and version-candidate groups, skipped paths, and the list of paths actually accessed.
+- **Safety boundary:** read-only — no file is moved, renamed, or deleted; nothing outside the authorized roots is accessed and symlinks are not followed; a file whose size and modification time have not been stable is never even opened; an undeterminable latest version is never auto-selected; cloud-sync lock files, incomplete downloads, and conflict copies never reach `include`, and resolving a conflict remains out of scope; a user override can relabel a file and be saved as a reusable Recipe but cannot promote an unstable file or a sync artifact.
+- **Not yet:** not wired into `run_delivery(...)` or `excel-ops deliver`; that integration is a separate step.
+- **Implementation:** [Issue #15](https://github.com/Schlaflied/excel-ops/issues/15) / [Detailed guide](workdir-scan.md)
+
 ## What can currently be composed
 
 The current modules cover the full Phase 1 local loop:
