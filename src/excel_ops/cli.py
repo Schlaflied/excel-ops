@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from .delivery import load_delivery_targets, run_delivery
+from .idempotency import IdempotencyOptions
 from .pipeline import run_pipeline
 from .schema_drift import save_confirmed_mapping, write_drift_report
 from .workdir import (
@@ -31,13 +32,38 @@ def main(argv: Sequence[str] | None = None) -> None:
         deliver.add_argument("--dry-run", action="store_true", help="Return the plan without touching files")
         deliver.add_argument("--recipe", help="Project Recipe JSON used to reuse confirmed decisions")
         deliver.add_argument("--result", help="Write the machine-readable run result to this JSON file")
+        deliver.add_argument(
+            "--run-state",
+            nargs="?",
+            const="",
+            help=(
+                "Enable whole-run idempotency: an unchanged rerun of a successful run is a no-op. "
+                "Optionally give the run-record path (default: <delivery_dir>/.excel-ops/idempotency.json)"
+            ),
+        )
+        deliver.add_argument(
+            "--task-key",
+            help="Name this periodic task, so several tasks can share one run-record file",
+        )
+        deliver.add_argument(
+            "--template-profile-version",
+            help="Template Profile version marker folded into the run fingerprint",
+        )
         args = deliver.parse_args(arguments[1:])
+        if args.task_key and args.run_state is None:
+            deliver.error("--task-key requires --run-state")
         config_path = Path(args.config)
         payload = json.loads(config_path.read_text(encoding="utf-8"))
         targets, options = load_delivery_targets(payload, base_dir=config_path.parent)
         if args.recipe:
             options["recipe_path"] = Path(args.recipe)
         inputs = options.pop("inputs")
+        if args.run_state is not None:
+            options["idempotency"] = IdempotencyOptions(
+                state_path=args.run_state or None,
+                task_key=args.task_key,
+                template_profile_version=args.template_profile_version,
+            )
         result = run_delivery(inputs, targets, dry_run=args.dry_run, **options)
         report = result.to_dict()
         if args.result:
@@ -45,7 +71,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
             )
         print(json.dumps(report, ensure_ascii=False, default=str))
-        if result.failures or (not args.dry_run and not result.delivered):
+        # A no-op is a success: the declared delivery is already in place and
+        # nothing changed, so there is nothing to deliver and nothing failed.
+        if result.failures or (not args.dry_run and not result.delivered and not result.no_op):
             sys.exit(1)
         return
 

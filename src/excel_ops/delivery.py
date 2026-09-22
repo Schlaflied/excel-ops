@@ -10,6 +10,14 @@ delivery``
 
 A successful ``write_template`` call is never reported as a delivery.  Only a
 target whose reopened file passed :func:`verify_and_deliver` is published.
+
+Passing ``idempotency=IdempotencyOptions(...)`` additionally turns on the
+whole-run short-circuit from :mod:`excel_ops.idempotency`: the run fingerprint is
+computed *before* any matching, writing or verification, and a fingerprint that
+matches a previously successful run returns a ``no_op`` result immediately.  That
+is a different mechanism from the per-record deduplication below
+(``_existing_record_ids`` / ``_build_plan`` / ``_mark_existing``), which stops one
+row being appended twice inside a target workbook; both stay in force.
 """
 
 from __future__ import annotations
@@ -40,6 +48,23 @@ from .delivery_verification import (
     verify_and_deliver,
 )
 from .formula_verification import FormulaVerifier
+from .idempotency import (
+    CHANGED,
+    FAILED,
+    NO_OP,
+    STARTED,
+    SUCCEEDED,
+    ConnectorTarget,
+    IdempotencyError,
+    IdempotencyOptions,
+    RunDecision,
+    RunFingerprint,
+    RunRecord,
+    compute_fingerprint,
+    evaluate_run,
+    load_run_record,
+    record_run,
+)
 from .ingestion import LayoutDetectionError, load_input_records
 from .matching import Destination, MatchResult, preallocate_records, stable_record_id
 from .models import ExtractedRecord
@@ -333,6 +358,17 @@ class DeliveryRun:
     #: The live confirmation batch, so callers can build reusable Recipe
     #: decisions with ``ambiguity.decide(...)``. Not part of ``to_dict()``.
     confirmation_batch: ConfirmationBatch | None = field(default=None, repr=False)
+    #: True when whole-run idempotency short-circuited this call: nothing
+    #: changed since a previously successful run, so no work was redone.
+    no_op: bool = False
+    #: The idempotency verdict for this call, when ``idempotency`` was supplied.
+    run_decision: RunDecision | None = field(default=None, repr=False)
+
+    @property
+    def fingerprint(self) -> str | None:
+        """The run fingerprint, when whole-run idempotency was enabled."""
+
+        return self.run_decision.fingerprint.digest if self.run_decision else None
 
     @property
     def delivery_paths(self) -> tuple[str, ...]:
@@ -355,6 +391,8 @@ class DeliveryRun:
             "failures": [item.to_dict() for item in self.failures],
             "recipe_path": self.recipe_path,
             "delivery_paths": list(self.delivery_paths),
+            "no_op": self.no_op,
+            "run_decision": self.run_decision.to_dict() if self.run_decision else None,
         }
 
 
@@ -369,6 +407,7 @@ def run_delivery(
     decisions: Sequence[RecipeDecision] = (),
     dry_run: bool = False,
     post_stage_hook: Callable[[Path], None] | None = None,
+    idempotency: IdempotencyOptions | None = None,
 ) -> DeliveryRun:
     """Run ingest to verified delivery for declared targets and return one result.
 
@@ -376,6 +415,12 @@ def run_delivery(
     before verification.  It exists so callers and tests can inspect or corrupt
     the staged artifact and prove that verification, not the writer, decides
     whether a file is delivered.
+
+    ``idempotency`` opts this call into the whole-run short-circuit.  The run
+    fingerprint is computed before any matching, write or verification; when it
+    matches a previously *successful* run the call returns a ``no_op`` result
+    without redoing the work.  A dry run never short-circuits -- it still returns
+    the full plan -- but it does report the verdict in ``run_decision``.
     """
 
     if not targets:
@@ -385,12 +430,16 @@ def run_delivery(
     delivery = Path(delivery_dir)
 
     failures: list[DeliveryFailure] = []
+    project_recipe, recipe_failure = _load_recipe(recipe_path)
+    guard = _RunGuard.of(inputs, targets, delivery, project_recipe, decisions, idempotency)
+    if guard is not None and guard.decision.no_op and not dry_run:
+        return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
+
     records, ingest_failures = _ingest(inputs)
     failures.extend(ingest_failures)
 
     outcomes, match_results = _classify(records, targets, confidence_threshold)
     ambiguities, ambiguity_records = _ambiguities_from_matches(match_results)
-    project_recipe, recipe_failure = _load_recipe(recipe_path)
     if recipe_failure is not None:
         failures.append(recipe_failure)
     run_decisions = {item.key: item for item in decisions if item.scope == "this-run"}
@@ -428,6 +477,10 @@ def run_delivery(
                     "Resolve every blocking item, then re-run the delivery.",
                 )
             )
+        if guard is not None and not dry_run:
+            # A blocked or failed run is recorded as a failure, never as a
+            # baseline a later identical run could short-circuit against.
+            guard.finish(FAILED, False, _counts(outcomes), failures, ())
         return DeliveryRun(
             False,
             dry_run,
@@ -439,8 +492,15 @@ def run_delivery(
             tuple(failures),
             str(recipe_path) if recipe_path else None,
             batch,
+            False,
+            guard.decision if guard else None,
         )
 
+    if guard is not None:
+        # Mark the attempt before the first write, so a run interrupted between
+        # here and the end is found as ``started`` and retried rather than being
+        # mistaken for a completed no-op baseline.
+        guard.start()
     outcomes, target_outcomes, write_failures = _write_and_verify(
         outcomes, targets, plan, post_stage_hook
     )
@@ -448,6 +508,14 @@ def run_delivery(
     delivered = bool(target_outcomes) and all(
         item.delivered or item.status == "no_new_records" for item in target_outcomes
     ) and not failures
+    if guard is not None:
+        guard.finish(
+            SUCCEEDED if delivered else FAILED,
+            delivered,
+            _counts(outcomes),
+            failures,
+            target_outcomes,
+        )
     return DeliveryRun(
         delivered,
         False,
@@ -459,6 +527,8 @@ def run_delivery(
         tuple(failures),
         str(recipe_path) if recipe_path else None,
         batch,
+        False,
+        guard.decision if guard else None,
     )
 
 
@@ -471,6 +541,7 @@ def plan_delivery(
     confidence_threshold: float = 0.85,
     recipe_path: str | Path | None = None,
     decisions: Sequence[RecipeDecision] = (),
+    idempotency: IdempotencyOptions | None = None,
 ) -> DeliveryRun:
     """Return the checkable plan without touching a single file."""
 
@@ -483,6 +554,217 @@ def plan_delivery(
         recipe_path=recipe_path,
         decisions=decisions,
         dry_run=True,
+        idempotency=idempotency,
+    )
+
+
+def _delivery_path(target: DeliveryTarget, delivery: Path) -> Path:
+    """The single place a target's delivered filename is derived."""
+
+    template = Path(target.template_path)
+    return delivery / (
+        target.delivery_name or f"{template.stem}-{target.key}{template.suffix}"
+    )
+
+
+def _period_payload(targets: Sequence[DeliveryTarget], period: Any) -> dict[str, Any]:
+    """The declared report period: the explicit one plus the in-workbook banners."""
+
+    return {
+        "declared": period,
+        "expectations": sorted(
+            f"{item.field}@{item.sheet}!{item.cell}={item.expected}"
+            for target in targets
+            for item in target.period_expectations
+        ),
+    }
+
+
+def _mapping_payload(targets: Sequence[DeliveryTarget]) -> list[dict[str, Any]]:
+    """The declared mapping version: what each target promises to write, where."""
+
+    return [
+        {
+            "key": target.key,
+            "aliases": sorted(target.destination.aliases),
+            "sheet": target.mapping.sheet,
+            "field_columns": {
+                name: str(column) for name, column in sorted(target.mapping.field_columns.items())
+            },
+            "header_row": target.mapping.header_row,
+            "data_start_row": target.mapping.data_start_row,
+            "template_type": target.mapping.template_type,
+            "style_source_row": target.mapping.style_source_row,
+            "max_rows": target.mapping.max_rows,
+            "overwrite_formulas": target.mapping.overwrite_formulas,
+            "record_id_field": target.record_id_field,
+            "required_fields": sorted(target.required_fields),
+        }
+        for target in sorted(targets, key=lambda item: item.key)
+    ]
+
+
+@dataclass
+class _RunGuard:
+    """The whole-run idempotency state for one ``run_delivery`` call."""
+
+    options: IdempotencyOptions
+    state_path: Path
+    task_key: str
+    connector: ConnectorTarget
+    decision: RunDecision
+    previous: RunRecord | None
+    #: Recomputes the fingerprint against the files as they are *now*, so the
+    #: record left behind describes the delivered state rather than the
+    #: pre-delivery one.  Without this, the output content hash recorded before
+    #: the write would never match the next run and no run could ever be a no-op.
+    recompute: Callable[[], RunFingerprint]
+
+    @classmethod
+    def of(
+        cls,
+        inputs: Sequence[str | Path],
+        targets: Sequence[DeliveryTarget],
+        delivery: Path,
+        project_recipe: Mapping[str, RecipeDecision],
+        decisions: Sequence[RecipeDecision],
+        options: IdempotencyOptions | None,
+    ) -> "_RunGuard | None":
+        if options is None:
+            return None
+        outputs = [_delivery_path(target, delivery) for target in targets]
+        connector = options.connector or ConnectorTarget.local(outputs)
+        templates = [target.template_path for target in targets]
+        mapping = _mapping_payload(targets)
+        period = _period_payload(targets, options.period)
+
+        def recompute() -> RunFingerprint:
+            return compute_fingerprint(
+                inputs=inputs,
+                templates=templates,
+                template_profile_version=options.template_profile_version,
+                mapping=mapping,
+                recipe_decisions=project_recipe,
+                confirmations=decisions,
+                period=period,
+                connector=connector,
+                revision_source=options.revision_source,
+            )
+
+        fingerprint = recompute()
+        path = options.resolved_state_path(delivery)
+        task_key = options.resolved_task_key(connector)
+        try:
+            previous = load_run_record(path, task_key)
+        except IdempotencyError:
+            # An unreadable or foreign run-state file must never authorize a
+            # no-op; the run proceeds and rewrites the record.
+            return cls(
+                options,
+                path,
+                task_key,
+                connector,
+                RunDecision(CHANGED, "unreadable_run_state", fingerprint),
+                None,
+                recompute,
+            )
+        decision = evaluate_run(
+            fingerprint,
+            previous,
+            connector=connector,
+            revision_source=options.revision_source,
+        )
+        return cls(options, path, task_key, connector, decision, previous, recompute)
+
+    def start(self) -> None:
+        record_run(
+            self.decision.fingerprint,
+            self.state_path,
+            task_key=self.task_key,
+            status=STARTED,
+            delivered=False,
+            detail={"stage": "write_and_verify"},
+            previous=self.previous,
+        )
+
+    def finish(
+        self,
+        status: str,
+        delivered: bool,
+        counts: Mapping[str, int],
+        failures: Sequence[DeliveryFailure],
+        target_outcomes: Sequence[TargetOutcome],
+    ) -> RunRecord:
+        # Only aggregate, non-identifying detail is persisted: counts, failure
+        # codes, and how many targets were delivered.  No path, no destination
+        # name, no cell value ever reaches the run record.
+        detail = {
+            "counts": dict(counts),
+            "failure_codes": sorted({item.code for item in failures}),
+            "targets": len(target_outcomes),
+            "delivered_targets": sum(1 for item in target_outcomes if item.delivered),
+        }
+        return record_run(
+            self.recompute(),
+            self.state_path,
+            task_key=self.task_key,
+            status=status,
+            delivered=delivered,
+            detail=detail,
+            previous=self.previous,
+        )
+
+
+def _no_op_run(
+    inputs: Sequence[str | Path],
+    targets: Sequence[DeliveryTarget],
+    delivery: Path,
+    decision: RunDecision,
+    recipe_path: str | Path | None,
+) -> DeliveryRun:
+    """Return "nothing changed" without redoing matching, writing, or verifying."""
+
+    planned: list[PlannedTarget] = []
+    outcomes: list[TargetOutcome] = []
+    for target in targets:
+        template = Path(target.template_path)
+        delivered_path = _delivery_path(target, delivery)
+        planned.append(
+            PlannedTarget(
+                destination_key=target.key,
+                template_path=str(template),
+                sheet=target.mapping.sheet,
+                field_mapping=dict(target.mapping.field_columns),
+                staged_path="",
+                delivery_path=str(delivered_path),
+                expected_written=0,
+                expected_review=0,
+                expected_skipped_existing=0,
+            )
+        )
+        outcomes.append(
+            TargetOutcome(
+                target.key,
+                str(template),
+                False,
+                delivery_path=str(delivered_path) if delivered_path.is_file() else None,
+                status=NO_OP,
+            )
+        )
+    plan = DeliveryPlan(tuple(str(item) for item in inputs), _counts(()), tuple(planned))
+    return DeliveryRun(
+        False,
+        False,
+        plan,
+        _counts(()),
+        (),
+        tuple(outcomes),
+        (),
+        (),
+        str(recipe_path) if recipe_path else None,
+        None,
+        True,
+        decision,
     )
 
 
@@ -897,7 +1179,7 @@ def _build_plan(
             for item in outcomes
             if item.status == REVIEW and target.key in item.candidates
         ]
-        delivery_path = delivery / (target.delivery_name or f"{template.stem}-{target.key}{template.suffix}")
+        delivery_path = _delivery_path(target, delivery)
         known = _existing_record_ids(delivery_path, target)
         existing[target.key] = known
         skipped = [item for item in accepted if item.record_id in known]
