@@ -73,6 +73,6 @@
     "tests/test_review_pack.py": "c0903c16b022c362693a3efc216f13fb95b0b8eaa544fd803898b237e5a986c7",
     "tests/test_schema_drift.py": "c3ff096e4a0f48a69c0475632b57458a6691b52842e02da3dca357ad81980da6",
     "tests/test_template_writer.py": "53c82e94be8a826cae802b56b2baed2777189ecf066a105add5ae116e629e677",
-    "tests/test_workdir.py": "2778246e9c031b1873687b5c3be2daa670bbfb9e2f92c6f038fb50d1af77ff89"
+    "tests/test_workdir.py": "93e768d6c61af5af3764fa2db4608a14be038ccd8a18f7a511ed746a8427f564"
   }
 }
