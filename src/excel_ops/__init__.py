@@ -58,6 +58,23 @@ from .formula_verification import (
     SummaryReconciliation,
 )
 from .pipeline import run_pipeline
+from .workdir import (
+    ClassificationOverride,
+    DuplicateGroup,
+    PeriodWindow,
+    ScanResult,
+    ScanScope,
+    ScannedFile,
+    StabilitySample,
+    UnauthorizedPathError,
+    VersionCandidateGroup,
+    WorkdirScanError,
+    format_dry_run,
+    load_workdir_recipe,
+    override_from_entry,
+    save_workdir_recipe,
+    scan_workdir,
+)
 from .review_pack import (
     ReviewDecision,
     ReviewHistoryEntry,
@@ -141,4 +158,19 @@ __all__ = [
     "FormulaVerifier",
     "SummaryReconciliation",
     "verify_output_name",
+    "ClassificationOverride",
+    "DuplicateGroup",
+    "PeriodWindow",
+    "ScanResult",
+    "ScanScope",
+    "ScannedFile",
+    "StabilitySample",
+    "UnauthorizedPathError",
+    "VersionCandidateGroup",
+    "WorkdirScanError",
+    "format_dry_run",
+    "load_workdir_recipe",
+    "override_from_entry",
+    "save_workdir_recipe",
+    "scan_workdir",
 ]
