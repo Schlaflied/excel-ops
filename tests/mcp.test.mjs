@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -14,6 +16,17 @@ import {
 import { createExcelOpsServer } from "../mcp/server.mjs";
 
 const serverPath = fileURLToPath(new URL("../mcp/server.mjs", import.meta.url));
+
+function fakeProcess(run) {
+  return () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    queueMicrotask(() => run(child));
+    return child;
+  };
+}
 
 test("bridge preserves successful, dry-run, and blocked CLI meanings", async () => {
   const delivered = classifyCliResult(
@@ -75,6 +88,43 @@ test("bridge turns malformed output and missing executables into structured erro
   assert.equal(missing.ok, false);
   assert.equal(missing.error.category, "environment_error");
   assert.equal(missing.error.code, "cli_unavailable");
+});
+
+test("bridge decodes UTF-8 safely when a character crosses stream chunks", async () => {
+  const bytes = Buffer.from(JSON.stringify({ delivered: true, note: "北区" }), "utf8");
+  const split = bytes.indexOf(Buffer.from("北", "utf8")) + 1;
+  const response = await runExcelOps("run_delivery", [], {
+    command: "fake",
+    timeoutMs: 5_000,
+    spawnImpl: fakeProcess((child) => {
+      child.stdout.write(bytes.subarray(0, split));
+      child.stdout.write(bytes.subarray(split));
+      child.stdout.end();
+      child.stderr.end();
+      child.emit("close", 0, null);
+    }),
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.note, "北区");
+});
+
+test("bridge reports signal termination as an environment failure", async () => {
+  const response = await runExcelOps("run_delivery", [], {
+    command: "fake",
+    timeoutMs: 5_000,
+    spawnImpl: fakeProcess((child) => {
+      child.stdout.end(JSON.stringify({ delivered: false }));
+      child.stderr.end();
+      child.emit("close", null, "SIGTERM");
+    }),
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.status, "failed");
+  assert.equal(response.error.category, "environment_error");
+  assert.equal(response.error.code, "cli_terminated");
+  assert.equal(response.error.detail, "SIGTERM");
 });
 
 test("argument builders preserve CLI boundaries without using a shell", () => {

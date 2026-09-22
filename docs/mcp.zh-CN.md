@@ -55,7 +55,7 @@ node mcp/server.mjs
 }
 ```
 
-CLI 无法启动或超时归类为 `environment_error`；CLI 输出不是合法 JSON 时归类为 `unexpected_error`；CLI 返回合法结果但退出码非零时归类为 `business_logic_blocked`。业务阻断仍保留 CLI 的原始结构化结果，让 Agent 可以直接解释复核或验证失败，无需解析终端文字。
+CLI 无法启动、超时或被外部信号终止时归类为 `environment_error`；CLI 输出不是合法 JSON 时归类为 `unexpected_error`；CLI 返回合法结果但退出码非零时归类为 `business_logic_blocked`。业务阻断仍保留 CLI 的原始结构化结果，让 Agent 可以直接解释复核或验证失败，无需解析终端文字。
 
 ## 边界
 

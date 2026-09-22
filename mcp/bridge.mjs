@@ -71,6 +71,7 @@ export function runExcelOps(operation, args, options = {}) {
   const defaultPrefix = options.command || explicitCli ? [] : ["-m", "excel_ops.cli"];
   const commandArgs = [...(options.argsPrefix ?? defaultPrefix), ...args];
   const timeoutMs = options.timeoutMs ?? configuredTimeout();
+  const spawnProcess = options.spawnImpl ?? spawn;
   const startedAt = performance.now();
 
   return new Promise((resolve) => {
@@ -104,7 +105,7 @@ export function runExcelOps(operation, args, options = {}) {
       });
 
     const append = (current, chunk) => {
-      const next = current + chunk.toString("utf8");
+      const next = current + chunk;
       if (Buffer.byteLength(next, "utf8") > MAX_OUTPUT_BYTES) {
         child.kill();
         fail(
@@ -117,7 +118,7 @@ export function runExcelOps(operation, args, options = {}) {
     };
 
     try {
-      child = spawn(command, commandArgs, {
+      child = spawnProcess(command, commandArgs, {
         cwd: options.cwd,
         env: options.env ?? process.env,
         shell: false,
@@ -132,6 +133,8 @@ export function runExcelOps(operation, args, options = {}) {
       return;
     }
 
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       stdout = append(stdout, chunk);
     });
@@ -145,12 +148,20 @@ export function runExcelOps(operation, args, options = {}) {
         error.message,
       );
     });
-    child.on("close", (exitCode) => {
+    child.on("close", (exitCode, signal) => {
       if (timedOut || settled) return;
+      if (exitCode === null) {
+        fail(
+          "cli_terminated",
+          `Excel-Ops CLI terminated by ${signal ?? "an external signal"}.`,
+          signal ?? undefined,
+        );
+        return;
+      }
       finish(
         classifyCliResult(
           operation,
-          exitCode ?? 1,
+          exitCode,
           stdout,
           stderr,
           Math.round(performance.now() - startedAt),

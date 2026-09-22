@@ -55,7 +55,7 @@ Every tool returns the `excel-ops-agent-v1` envelope:
 }
 ```
 
-CLI startup and timeout failures are `environment_error`; malformed CLI output is `unexpected_error`; and a valid nonzero CLI result is `business_logic_blocked`. The original structured CLI result is retained for business blockers so the agent can explain review or verification failures without parsing terminal text.
+CLI startup, timeout, and external-signal termination failures are `environment_error`; malformed CLI output is `unexpected_error`; and a valid nonzero CLI result is `business_logic_blocked`. The original structured CLI result is retained for business blockers so the agent can explain review or verification failures without parsing terminal text.
 
 ## Boundaries
 

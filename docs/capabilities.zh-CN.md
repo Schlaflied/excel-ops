@@ -138,7 +138,7 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 
 ### 17. 本地 Agent MCP 服务
 
-- **做什么：** 通过本地 stdio 把 `scan_workdir`、`plan_delivery` 和 `run_delivery` 暴露为 Agent 可发现的 MCP 工具，返回带版本的结构化结果，并以现有 Python CLI 作为唯一执行后端。
+- **做什么：** 通过本地 stdio 把 `excel_ops.scan_workdir`、`excel_ops.plan_delivery` 和 `excel_ops.run_delivery` 暴露为 Agent 可发现的 MCP 工具，返回带版本的结构化结果，并以现有 Python CLI 作为唯一执行后端。
 - **输出与证据：** MCP 输入/输出 schema、工具行为标注、结构化环境/业务失败分类、CLI 语义一致性测试，以及覆盖真实 `tools/list`、`tools/call` 的内存协议测试。
 - **安全边界：** MCP 层不包含任何表格解析、匹配、写入或验证逻辑；扫描和计划标为只读；正式交付要求 `confirmed: true`；源文件保护、人工复核、写后回读、幂等和 Manifest 规则继续由 Python 强制执行。这不是云端或飞书连接器。
 - **实现：** [Issue #53](https://github.com/Schlaflied/excel-ops/issues/53) / [详细文档](mcp.zh-CN.md)

@@ -138,7 +138,7 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 
 ### 17. Local Agent MCP server
 
-- **What it does:** exposes `scan_workdir`, `plan_delivery`, and `run_delivery` as discoverable MCP tools over local stdio, with versioned structured results and the existing Python CLI as the only execution backend.
+- **What it does:** exposes `excel_ops.scan_workdir`, `excel_ops.plan_delivery`, and `excel_ops.run_delivery` as discoverable MCP tools over local stdio, with versioned structured results and the existing Python CLI as the only execution backend.
 - **Output and evidence:** MCP input/output schemas, tool annotations, structured environment/business failure categories, direct-CLI semantic parity tests, and an in-memory protocol test covering real `tools/list` and `tools/call` requests.
 - **Safety boundary:** the MCP layer contains no spreadsheet parsing, matching, writing, or verification logic; planning and scanning are marked read-only; delivery requires `confirmed: true`; source preservation, human review, reread verification, idempotency, and Manifest rules remain enforced by Python. This is not a cloud or Feishu connector.
 - **Implementation:** [Issue #53](https://github.com/Schlaflied/excel-ops/issues/53) / [Detailed guide](mcp.md)
