@@ -492,10 +492,21 @@ def test_no_cell_value_from_the_delivery_appears_anywhere_in_the_manifest(tmp_pa
 
     assert run.delivered is True
     manifest = run.manifests[0]
+    assert manifest.written == 2
     # The values really are in the workbook -- so their absence below is a fact
     # about the manifest, not about the fixture.
-    delivered_text = Path(manifest.output).read_bytes()
-    assert manifest.written == 2
+    workbook = load_workbook(Path(manifest.output), read_only=True, data_only=True)
+    try:
+        cells = {
+            str(value)
+            for row in workbook["Depot"].iter_rows(min_row=2, values_only=True)
+            for value in row
+            if value is not None
+        }
+    finally:
+        workbook.close()
+    for secret in SECRETS:
+        assert secret in cells, f"{secret!r} never reached the delivered workbook"
 
     serialized = manifest.to_json()
     readable = format_manifest(manifest)
@@ -508,7 +519,6 @@ def test_no_cell_value_from_the_delivery_appears_anywhere_in_the_manifest(tmp_pa
     # also declines to copy.
     for record in run.records:
         assert record.record_id not in serialized
-    del delivered_text
 
 
 def test_a_verification_finding_message_is_never_copied_into_the_manifest(tmp_path: Path):
