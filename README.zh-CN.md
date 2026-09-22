@@ -139,7 +139,7 @@ v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift 检
 
 [查看完整能力清单、实现状态、安全边界以及对应的 Issue/PR](docs/capabilities.zh-CN.md)。
 
-`main` 上仍不在范围内：完整跨运行指纹幂等（[#19](https://github.com/Schlaflied/excel-ops/issues/19)）、来源与验证 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、币种与精度（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)），以及全部云端连接器。
+`main` 上仍不在范围内：多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）以及全部云端连接器。语义化币种与精度规则见[数字格式策略文档](docs/number-format-policy.zh-CN.md)。
 
 ## 许可证
 

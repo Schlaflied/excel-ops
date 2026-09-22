@@ -191,6 +191,8 @@ class DeliveryManifest:
     #: cross-reference only; the Manifest never reads or writes that record.
     run_fingerprint: str | None = None
     format: str = MANIFEST_FORMAT
+    #: Applied semantic display policy. Contains rules only, never cell values.
+    format_policy: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def accepted(self) -> int:
@@ -237,6 +239,7 @@ class DeliveryManifest:
             "template_version": self.template_version,
             "recipe_path": self.recipe_path,
             "recipe_version": self.recipe_version,
+            "format_policy": dict(self.format_policy),
             "sources": [item.to_dict() for item in self.sources],
             "accepted": self.accepted,
             "review": self.review,
@@ -402,6 +405,7 @@ def _manifest_for(
         template_version=file_content_digest(target.template_path),
         recipe_version=recipe_version_digest(recipe_decisions),
         verification=_verification(outcome),
+        format_policy=dict(outcome.format_policy),
         sources=sources,
         tabs=tabs,
         period_start=period.period_start.isoformat() if period else None,
@@ -641,6 +645,12 @@ def format_manifest(manifest: DeliveryManifest) -> str:
     ]
     if manifest.verification.codes:
         lines.append(f"  finding codes    {', '.join(manifest.verification.codes)}")
+    if manifest.format_policy:
+        formatted = manifest.format_policy.get("fields", {})
+        lines.append(
+            f"  number formats   locale={manifest.format_policy.get('locale')}, "
+            f"fields={', '.join(sorted(formatted)) or 'none'}"
+        )
     lines.append(
         "  run counts       "
         + ", ".join(f"{name}={manifest.run_counts.get(name, 0)}" for name in ("input", *_STATUSES))
