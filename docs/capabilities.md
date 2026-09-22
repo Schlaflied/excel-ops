@@ -136,6 +136,13 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Safety boundary:** no cell value, record ID, or verification finding message is ever copied in — only file names, content hashes, sheet names, declared field names, and integer counts; a Manifest is generated only for a target that actually delivered a file, never for a plan, a dry run, or a failed verification; a disagreement between the run's counters and the real file is reported as a named discrepancy instead of being smoothed over.
 - **Implementation:** [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) / [Detailed guide](delivery-manifest.md)
 
+### 17. Local Agent MCP server
+
+- **What it does:** exposes `scan_workdir`, `plan_delivery`, and `run_delivery` as discoverable MCP tools over local stdio, with versioned structured results and the existing Python CLI as the only execution backend.
+- **Output and evidence:** MCP input/output schemas, tool annotations, structured environment/business failure categories, direct-CLI semantic parity tests, and an in-memory protocol test covering real `tools/list` and `tools/call` requests.
+- **Safety boundary:** the MCP layer contains no spreadsheet parsing, matching, writing, or verification logic; planning and scanning are marked read-only; delivery requires `confirmed: true`; source preservation, human review, reread verification, idempotency, and Manifest rules remain enforced by Python. This is not a cloud or Feishu connector.
+- **Implementation:** [Issue #53](https://github.com/Schlaflied/excel-ops/issues/53) / [Detailed guide](mcp.md)
+
 ## What can currently be composed
 
 The current modules cover the full Phase 1 local loop:
