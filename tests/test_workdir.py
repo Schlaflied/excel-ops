@@ -163,6 +163,46 @@ def test_version_key_collapses_common_decorations():
     assert version_key("hours.csv") != version_key("wages.csv")
 
 
+def test_bare_trailing_numbers_are_not_treated_as_version_markers():
+    # A numbered region/batch or a date stamp is not a version decoration:
+    # collapsing it would wrongly group distinct current-period files.
+    assert version_key("north-hours-1.csv") != version_key("north-hours-2.csv")
+    # Separators still normalize to spaces; only the trailing digits must survive.
+    assert version_key("hours-2026-09.csv") == "hours 2026 09"
+
+
+def test_files_differing_only_by_a_bare_trailing_number_are_not_version_candidates(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _file(work, "north-hours-1.csv", "region,hours\nnorth,1\n")
+    _file(work, "north-hours-2.csv", "region,hours\nnorth,2\n")
+
+    result = _scan(work)
+
+    assert result.version_groups == ()
+    assert {item.relative_path for item in result.included} == {
+        "north-hours-1.csv",
+        "north-hours-2.csv",
+    }
+
+
+def test_explicit_version_markers_still_group_as_version_candidates(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    _file(work, "report-v1.csv", "a,b\n1,1\n")
+    _file(work, "report-v2.csv", "a,b\n2,2\n")
+    _file(work, "data-rev3.xlsx", "rev-three-bytes")
+    _file(work, "data-rev4.xlsx", "rev-four-bytes")
+
+    result = _scan(work)
+
+    version_keys = {group.version_key for group in result.version_groups}
+    assert version_keys == {"report", "data"}
+    for group in result.version_groups:
+        assert group.selected is None
+        assert group.reason == "version_candidates_require_confirmation"
+
+
 def test_a_file_still_being_written_is_never_read_or_included(tmp_path, monkeypatch):
     work = tmp_path / "work"
     work.mkdir()
@@ -205,6 +245,37 @@ def test_a_file_that_changed_since_the_previous_sample_is_not_trusted(tmp_path):
     # Re-running with the matching sample trusts the now settled file again.
     third = _scan(work, previous_samples=samples)
     assert third.entry("hours.csv").disposition == INCLUDE
+
+
+def test_stability_survives_sub_microsecond_jitter_from_iso_round_trip(tmp_path):
+    # ``stability_samples()`` reads ``modified_at`` back from an ISO-8601
+    # string, which is microsecond-precise. A filesystem mtime with finer
+    # precision than that must still compare as unchanged, or a genuinely
+    # untouched file gets stuck at "not_stable_yet" forever.
+    work = tmp_path / "work"
+    work.mkdir()
+    _file(work, "hours.csv")
+
+    first = _scan(work)
+    assert first.entry("hours.csv").disposition == INCLUDE
+
+    samples = first.stability_samples()
+    original = samples["hours.csv"]
+    # Round-trip the recorded value through the same ISO-string precision the
+    # real persistence path uses, then perturb it by less than a microsecond
+    # to simulate the jitter a float -> ISO -> float trip can introduce.
+    round_tripped = datetime.fromisoformat(
+        datetime.fromtimestamp(original.modified_at, timezone.utc).isoformat()
+    ).timestamp()
+    jittered = {
+        "hours.csv": StabilitySample(original.size, round_tripped + 4e-7),
+    }
+
+    second = _scan(work, previous_samples=jittered)
+
+    unchanged = second.entry("hours.csv")
+    assert unchanged.stable is True
+    assert unchanged.disposition == INCLUDE
 
 
 def test_cloud_sync_artifacts_are_flagged_instead_of_ingested(tmp_path):

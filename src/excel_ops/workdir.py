@@ -96,7 +96,8 @@ _VERSION_DECORATIONS = (
     re.compile(r"\s*\(\d+\)$"),
     re.compile(r"\s*-\s*copy(\s*\(\d+\))?$", re.IGNORECASE),
     re.compile(r"[\s_-]*(final|latest|new|old|draft)$", re.IGNORECASE),
-    re.compile(r"[\s_-]*v?\d+(\.\d+)*$", re.IGNORECASE),
+    re.compile(r"[\s_-]*(?<![A-Za-z])v\d+(\.\d+)*$", re.IGNORECASE),
+    re.compile(r"[\s_-]*(rev|version|ver)[\s_-]*\d+(\.\d+)*$", re.IGNORECASE),
     re.compile(r"[\s_-]*(最终版?|最新版?|终版|定稿|副本|修订版?)$"),
 )
 
@@ -678,7 +679,11 @@ def _is_stable(
     window_seconds: float,
     previous: StabilitySample | None,
 ) -> bool:
-    if previous is not None and (previous.size != size or previous.modified_at != modified_at):
+    # ``modified_at`` survives a round trip through an ISO string, which is
+    # microsecond-precise, so compare within that resolution.
+    if previous is not None and (
+        previous.size != size or abs(previous.modified_at - modified_at) > 1e-6
+    ):
         return False
     return (now.timestamp() - modified_at) >= window_seconds
 
