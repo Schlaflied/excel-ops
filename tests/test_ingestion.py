@@ -1,10 +1,12 @@
 from datetime import datetime
+from math import inf, nan
 from pathlib import Path
 
 import pytest
 from openpyxl import Workbook
 
 from excel_ops.ingestion import LayoutDetectionError, load_input_records
+from excel_ops.models import ExtractedRecord
 
 
 def test_two_xlsx_layouts_produce_same_contract(tmp_path: Path):
@@ -76,6 +78,36 @@ def test_optional_amount_and_currency_flow_into_the_normalized_contract(tmp_path
 
     assert record.amount == 1234.5
     assert record.currency == "CAD"
+
+
+@pytest.mark.parametrize("value", [nan, inf, -inf, "NaN", "Infinity"])
+def test_non_finite_amounts_are_not_accepted_as_numeric_values(value):
+    record = ExtractedRecord.from_dict({"amount": value}, "synthetic.json")
+    assert record.amount is None
+
+
+def test_embedded_currency_is_preserved_and_checked_against_explicit_currency():
+    matching = ExtractedRecord.from_dict(
+        {"amount": "US$1,234.50", "currency": "USD"}, "synthetic.json"
+    )
+    inferred = ExtractedRecord.from_dict({"amount": "CA$100"}, "synthetic.json")
+    disambiguated = ExtractedRecord.from_dict(
+        {"amount": "$100", "currency": "CAD"}, "synthetic.json"
+    )
+
+    assert matching.amount == 1234.5
+    assert matching.currency == "USD"
+    assert inferred.amount == 100
+    assert inferred.currency == "CAD"
+    assert disambiguated.currency == "CAD"
+    with pytest.raises(ValueError, match="USD.*conflicts.*CAD"):
+        ExtractedRecord.from_dict(
+            {"amount": "US$100", "currency": "CAD"}, "synthetic.json"
+        )
+    with pytest.raises(ValueError, match=r"\$.*conflicts.*EUR"):
+        ExtractedRecord.from_dict(
+            {"amount": "$100", "currency": "EUR"}, "synthetic.json"
+        )
 
 
 def test_unrecognized_layout_stops_without_partial_output(tmp_path: Path):
