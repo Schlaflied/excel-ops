@@ -121,6 +121,14 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Not yet:** not wired into `run_delivery(...)` or `excel-ops deliver`; that integration is a separate step.
 - **Implementation:** [Issue #15](https://github.com/Schlaflied/excel-ops/issues/15) / [Detailed guide](workdir-scan.md)
 
+### 15. Idempotent execution of a periodic task
+
+- **What it does:** fingerprints a run from the content hash of its inputs, the template content plus Template Profile version, the mapping and project Recipe, the human confirmations actually applied, the declared report period, the output target, the existing output's content hash, and the target's remote revision; compares that fingerprint with a persisted run record and returns `no_op`, `changed`, or `retry`. Wired into `run_delivery(...)` as an early short-circuit (`idempotency=IdempotencyOptions(...)`, `excel-ops deliver --run-state`) that returns before any matching, write, or verification happens.
+- **Output and evidence:** one versioned run record per task in `<delivery_dir>/.excel-ops/idempotency.json` holding the fingerprint, its per-component digests, the run status, the attempt count, and aggregate detail; the run result carries `no_op` plus a `run_decision` naming the reason and the components that changed.
+- **Safety boundary:** only a run explicitly recorded as `succeeded` can justify a no-op — a failed, blocked, or interrupted run returns `retry` and re-runs; a changed template, Recipe, or human review decision always re-runs; files are identified by content, never by name, path, size, or modification time; every persisted component is a digest, so no path, destination name, cell value, cloud identifier, or credential is stored; a corrupt or foreign run-state file never authorizes a no-op; a dry run never short-circuits.
+- **Not yet:** the cloud-target revision conflict check is a forward-compatible extension point with stub-backed tests, not a working cloud connector; the decision is whole-run, not per-record — the independent per-record deduplication in the delivery pipeline still decides what is appended.
+- **Implementation:** [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) / [Detailed guide](idempotency.md)
+
 ## What can currently be composed
 
 The current modules cover the full Phase 1 local loop:
@@ -135,7 +143,7 @@ This loop is exercised end to end against synthetic fixtures and judged by the r
 
 ## Not implemented or not yet complete end to end
 
-- [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19): complete cross-run idempotency. The integrated run does not append records a target already holds, but it does not yet fingerprint changed values for delivered records, renamed or moved deliveries, or interrupted runs;
+- cloud-target revision conflict handling for [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19). Run-level fingerprinting and the no-op short-circuit are implemented (capability 15), but the revision conflict check is only a forward-compatible interface until a real cloud connector exists;
 - [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) source and verification Manifests, [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) currency and precision rules, and [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
 - recalculated-formula proof, which requires Excel or LibreOffice rather than openpyxl;
 - local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;

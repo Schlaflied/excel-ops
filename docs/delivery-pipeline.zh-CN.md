@@ -137,7 +137,7 @@ excel-ops deliver delivery-plan.json --recipe recipes/project-recipe.json --resu
 
 ## 本流程不覆盖的范围
 
-- 跨运行指纹幂等仍属于 [#19](https://github.com/Schlaflied/excel-ops/issues/19)。重跑同一份已确认输入不会向已包含这些 record ID 的目标追加重复记录，但流程尚不能识别已交付记录的值发生变化、交付文件被改名或移动，以及运行中断后的部分状态。
+- 整次运行的幂等是可选开启的，并且放在独立模块里：传 `idempotency=IdempotencyOptions(...)`（或 `excel-ops deliver --run-state`），成功运行在没有变化时重跑会在任何匹配、写入与验证发生之前短路为 no-op，见[幂等执行](idempotency.zh-CN.md)。不开启时流程按本页描述运行：重跑同一份已确认输入仍会重新摄取、重新匹配、重新计划，再由按记录去重把目标已包含的记录挡下来。[#19](https://github.com/Schlaflied/excel-ops/issues/19) 里的云端目标 revision 冲突检查是向前兼容的接口，不是可用的云端连接器。
 - 来源与验证 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、币种与精度（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）。
 - 云端连接器、多 Tab 编排、跨来源事实判断、地区法规计算。
 - openpyxl 不做公式计算。声明的公式检查是静态的，运行会显式报告 `recalculation_not_verified` 警告，而不是声称工作簿已重算。

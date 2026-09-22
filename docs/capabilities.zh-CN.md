@@ -121,6 +121,14 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 - **尚未做到：** 未接入 `run_delivery(...)` 或 `excel-ops deliver`，该集成是后续独立的一步。
 - **实现：** [Issue #15](https://github.com/Schlaflied/excel-ops/issues/15) / [详细文档](workdir-scan.zh-CN.md)
 
+### 15. 周期性任务的幂等执行
+
+- **做什么：** 用输入文件内容 hash、模板内容加 Template Profile 版本、mapping 与项目 Recipe、本次实际应用的人工确认、声明的报告周期、输出目标、已存在输出的内容 hash，以及目标远端 revision，为一次运行生成指纹；与持久化的运行记录比较后返回 `no_op`、`changed` 或 `retry`。已接入 `run_delivery(...)` 作为前置短路（`idempotency=IdempotencyOptions(...)`、`excel-ops deliver --run-state`），在任何匹配、写入或验证发生之前就返回。
+- **输出与证据：** 每个任务在 `<delivery_dir>/.excel-ops/idempotency.json` 里有一条带版本的运行记录，包含指纹、各组件摘要、运行状态、尝试次数与聚合明细；运行结果带 `no_op` 字段以及说明理由和变化组件的 `run_decision`。
+- **安全边界：** 只有被显式记为 `succeeded` 的运行才能支撑 no-op——失败、被阻断或被中断的运行返回 `retry` 并重新执行；模板、Recipe 或人工审核决定变化一定重新执行；文件按内容识别，从不依赖文件名、路径、大小或修改时间；持久化的每个组件都是摘要，因此不存路径、目标名称、单元格值、云端标识符或凭据；损坏或格式不符的运行状态文件永不授权 no-op；dry run 永不短路。
+- **尚未做到：** 云端目标 revision 冲突检查只是向前兼容的扩展点，带 stub 测试覆盖，并非可用的云端连接器；判定针对整次运行而非单条记录——实际追加什么仍由交付流程中独立的按记录去重决定。
+- **实现：** [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) / [详细文档](idempotency.zh-CN.md)
+
 ## 当前可以组合到什么程度
 
 当前模块已经覆盖 Phase 1 本地闭环的全部环节：
@@ -135,7 +143,7 @@ ingest → normalize/type inference → schema check → strict match → ambigu
 
 ## 尚未实现或尚未形成完整闭环
 
-- [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19)：完整跨运行幂等。集成运行不会向目标追加它已包含的记录，但尚不能对已交付记录的值变化、被改名或移动的交付文件以及中断的运行做指纹识别；
+- [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) 的云端目标 revision 冲突处理。运行级指纹与 no-op 短路已实现（能力 15），但在真正的云端连接器出现之前，revision 冲突检查只是一个向前兼容的接口；
 - [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) 来源与验证 Manifest、[Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) 币种与精度、[Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
 - 公式重算证据，需要 Excel 或 LibreOffice，openpyxl 无法提供；
 - 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；

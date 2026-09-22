@@ -80,6 +80,14 @@ excel-ops scan-workdir ./september --period-start 2026-09-01 --period-end 2026-0
 
 扫描是只读的，只触碰你列出的目录，不会读取仍在写入或同步中的文件，也不会在 `final.xlsx` / `final (1).xlsx` / `final-final.xlsx` 之间替你选一个。见[工作目录扫描](docs/workdir-scan.zh-CN.md)；它尚未接入 `excel-ops deliver`。
 
+让周期性任务变成幂等的：没有实质变化时重复运行返回 no-op，而不是把活重做一遍：
+
+```bash
+excel-ops deliver delivery-plan.json --run-state --task-key weekly-north
+```
+
+输入与模板按内容取指纹，因此改名但内容相同的文件不会被重复处理；模板、Recipe 或人工审核决定发生变化则一定触发新执行；失败或被中断的运行永远不会被记成已完成。见[幂等执行](docs/idempotency.zh-CN.md)。
+
 在追加、合并或写回前比较工作簿结构，见 [Schema Drift 检查](docs/schema-drift.zh-CN.md)。
 
 系统更新检查、显式确认的更新与回滚见 [Refresh](docs/refresh.zh-CN.md)。

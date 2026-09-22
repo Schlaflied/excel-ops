@@ -84,6 +84,14 @@ excel-ops scan-workdir ./september --period-start 2026-09-01 --period-end 2026-0
 
 The scan is read-only, only touches directories you list, never reads a file that is still being written or synced, and never picks a winner among `final.xlsx` / `final (1).xlsx` / `final-final.xlsx`. See [Working-directory scan](docs/workdir-scan.md); it is not yet wired into `excel-ops deliver`.
 
+To make a periodic task idempotent, so that re-running it with nothing changed returns a no-op instead of redoing the work:
+
+```bash
+excel-ops deliver delivery-plan.json --run-state --task-key weekly-north
+```
+
+Inputs and templates are fingerprinted by content, so a renamed but identical file is not reprocessed, while a changed template, Recipe, or human review decision always triggers a new run — and a failed or interrupted run is never recorded as a completed one. See [Idempotent execution](docs/idempotency.md).
+
 For comparing workbook structures before append, join, or write-back, see [Schema drift](docs/schema-drift.md).
 
 For system update checks, confirmed updates, and rollback, see [Refresh](docs/refresh.md).
