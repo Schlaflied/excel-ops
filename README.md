@@ -76,6 +76,14 @@ See [Agent workflow](docs/agent-workflow.md) for the conversation contract and [
 
 See [Batch ambiguity confirmation and Recipes](docs/ambiguity-recipes.md) for grouped decisions, run/project scopes, and conflict handling.
 
+To find out which files in a working directory are this period's inputs before any of them is read:
+
+```bash
+excel-ops scan-workdir ./september --period-start 2026-09-01 --period-end 2026-09-30
+```
+
+The scan is read-only, only touches directories you list, never reads a file that is still being written or synced, and never picks a winner among `final.xlsx` / `final (1).xlsx` / `final-final.xlsx`. See [Working-directory scan](docs/workdir-scan.md); it is not yet wired into `excel-ops deliver`.
+
 For comparing workbook structures before append, join, or write-back, see [Schema drift](docs/schema-drift.md).
 
 For system update checks, confirmed updates, and rollback, see [Refresh](docs/refresh.md).
