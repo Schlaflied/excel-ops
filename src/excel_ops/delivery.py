@@ -39,6 +39,11 @@ from .ambiguity import (
     save_project_recipe,
 )
 from .cells import column_number, is_merged_non_anchor, is_protected_formula_value
+from .delivery_manifest import (
+    DeliveryManifest,
+    build_delivery_manifests,
+    write_delivery_manifests,
+)
 from .delivery_verification import (
     DeliveryContract,
     DeliveryVerificationError,
@@ -68,6 +73,7 @@ from .idempotency import (
 from .ingestion import LayoutDetectionError, load_input_records
 from .matching import Destination, MatchResult, preallocate_records, stable_record_id
 from .models import ExtractedRecord
+from .periods import PeriodResult
 from .review import review_record
 from .template_writer import (
     TemplateMapping,
@@ -363,6 +369,14 @@ class DeliveryRun:
     no_op: bool = False
     #: The idempotency verdict for this call, when ``idempotency`` was supplied.
     run_decision: RunDecision | None = field(default=None, repr=False)
+    #: One source-and-verification Manifest per *delivered* output (issue #20),
+    #: generated from this run's own outcomes and from the persisted file.  A run
+    #: that delivered nothing carries none.
+    manifests: tuple[DeliveryManifest, ...] = field(default_factory=tuple)
+
+    @property
+    def manifest_paths(self) -> tuple[str, ...]:
+        return tuple(str(item.manifest_path()) for item in self.manifests)
 
     @property
     def fingerprint(self) -> str | None:
@@ -393,6 +407,8 @@ class DeliveryRun:
             "delivery_paths": list(self.delivery_paths),
             "no_op": self.no_op,
             "run_decision": self.run_decision.to_dict() if self.run_decision else None,
+            "manifests": [item.to_dict() for item in self.manifests],
+            "manifest_paths": list(self.manifest_paths),
         }
 
 
@@ -408,6 +424,8 @@ def run_delivery(
     dry_run: bool = False,
     post_stage_hook: Callable[[Path], None] | None = None,
     idempotency: IdempotencyOptions | None = None,
+    period: PeriodResult | None = None,
+    write_manifest: bool = True,
 ) -> DeliveryRun:
     """Run ingest to verified delivery for declared targets and return one result.
 
@@ -421,6 +439,17 @@ def run_delivery(
     matches a previously *successful* run the call returns a ``no_op`` result
     without redoing the work.  A dry run never short-circuits -- it still returns
     the full plan -- but it does report the verdict in ``run_decision``.
+
+    ``period`` is the resolved report period this run delivers for.  It is
+    recorded in the #20 Manifest as ``period_start``/``period_end``; the period
+    values written *into* a workbook are still declared per target as
+    ``period_expectations`` and verified by #4.
+
+    Every delivered output gets one Manifest in ``result.manifests``, built from
+    this run's own outcomes and from the persisted file.  ``write_manifest=True``
+    (the default) also writes ``<delivered file>.manifest.json`` and
+    ``.manifest.txt`` beside it.  A dry run and a no-op produce no Manifest,
+    because no file was delivered.
     """
 
     if not targets:
@@ -435,7 +464,7 @@ def run_delivery(
     if guard is not None and guard.decision.no_op and not dry_run:
         return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
 
-    records, ingest_failures = _ingest(inputs)
+    records, record_inputs, ingest_failures = _ingest(inputs)
     failures.extend(ingest_failures)
 
     outcomes, match_results = _classify(records, targets, confidence_threshold)
@@ -516,7 +545,7 @@ def run_delivery(
             failures,
             target_outcomes,
         )
-    return DeliveryRun(
+    run = DeliveryRun(
         delivered,
         False,
         plan,
@@ -530,6 +559,19 @@ def run_delivery(
         False,
         guard.decision if guard else None,
     )
+    # The Manifest is generated last, from the run that just finished and from
+    # the file that is now on disk.  It is evidence about a completed delivery,
+    # never a parallel bookkeeping system that could drift from it.
+    manifests = build_delivery_manifests(
+        run,
+        targets,
+        period=period,
+        recipe_decisions={**project_recipe, **project_decisions},
+        record_input_paths=record_inputs,
+    )
+    if write_manifest:
+        write_delivery_manifests(manifests)
+    return replace(run, manifests=manifests)
 
 
 def plan_delivery(
@@ -776,13 +818,23 @@ def _validate_targets(targets: Sequence[DeliveryTarget]) -> None:
 
 def _ingest(
     inputs: Sequence[str | Path],
-) -> tuple[list[ExtractedRecord], list[DeliveryFailure]]:
+) -> tuple[list[ExtractedRecord], list[str], list[DeliveryFailure]]:
+    """Ingest every input and remember which input each record came from.
+
+    The third return value is aligned with the records: entry *i* is the input
+    path record *i* was read from.  A record's own ``source_file`` names the
+    provenance it *declares* — an extraction JSON's records name the image, not
+    the JSON — so only the ingester knows which declared input produced it.  The
+    #20 Manifest needs that to hash the right file per source.
+    """
+
     records: list[ExtractedRecord] = []
+    origins: list[str] = []
     failures: list[DeliveryFailure] = []
     for item in inputs:
         path = Path(item)
         try:
-            records.extend(load_input_records(path))
+            loaded = load_input_records(path)
         except LayoutDetectionError as error:
             failures.append(
                 DeliveryFailure(
@@ -799,7 +851,10 @@ def _ingest(
                     "Supply a readable .xlsx, .xlsm, .csv, or extraction .json input.",
                 )
             )
-    return records, failures
+        else:
+            records.extend(loaded)
+            origins.extend(str(item) for _ in loaded)
+    return records, origins, failures
 
 
 def _row_values(record_id: str, record: ExtractedRecord) -> dict[str, Any]:

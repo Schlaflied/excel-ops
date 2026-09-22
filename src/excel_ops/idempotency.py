@@ -725,3 +725,19 @@ def fingerprint_paths(paths: Sequence[str | Path]) -> tuple[str, ...]:
     """Expose the per-file content digests, for reporting and tests."""
 
     return tuple(_content_digests(paths))
+
+
+def recipe_version_digest(decisions: Iterable[Any] | Mapping[str, Any] | None) -> str:
+    """Version the reusable Recipe decisions by their content.
+
+    This is the ``recipe`` fingerprint component (see :func:`compute_fingerprint`)
+    exposed on its own, so a report can record *which* rule version produced an
+    artifact without recomputing a whole run fingerprint or reimplementing the
+    canonicalization.  Like the component, it excludes a decision's ``source``
+    and ``decided_at``: re-saving the same answer is not a rule change.
+
+    The returned value is ``sha256:<hex>``; the fingerprint component is the same
+    hex without the prefix, so the two remain directly comparable.
+    """
+
+    return f"sha256:{_digest(_decisions_payload(decisions))}"
