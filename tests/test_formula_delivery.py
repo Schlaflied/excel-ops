@@ -69,3 +69,69 @@ def test_formula_rule_requires_independent_expectations():
                 "target_range": "D2",
             }
         )
+
+
+def test_expected_values_are_part_of_the_idempotency_fingerprint():
+    first = FormulaDeliveryRule(
+        _formula_plan(),
+        "Report",
+        "D2",
+        (FormulaValueExpectation("Report", "D2", 5),),
+    )
+    second = FormulaDeliveryRule(
+        _formula_plan(),
+        "Report",
+        "D2",
+        (FormulaValueExpectation("Report", "D2", 6),),
+    )
+
+    assert first.fingerprint_payload() != second.fingerprint_payload()
+    assert first.manifest_payload() == second.manifest_payload()
+
+
+def test_static_formula_rule_rejects_unverified_expectations():
+    plan = _formula_plan().to_dict()
+    plan.update(
+        output_mode="static",
+        value="approved",
+        requires_independent_recalculation=False,
+    )
+
+    with pytest.raises(FormulaDeliveryError, match="static mode expectations"):
+        formula_rule_from_mapping(
+            {
+                "plan": plan,
+                "sheet": "Report",
+                "target_range": "D2",
+                "expectations": [
+                    {"sheet": "Report", "cell": "D2", "expected": "approved"}
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        (
+            "requires_independent_recalculation",
+            "false",
+            "requires_independent_recalculation must be a boolean",
+        ),
+        ("overwrite_formulas", "false", "overwrite_formulas must be a boolean"),
+    ],
+)
+def test_formula_rule_requires_strict_booleans(field, value, message):
+    payload = {
+        "plan": _formula_plan().to_dict(),
+        "sheet": "Report",
+        "target_range": "D2",
+        "expectations": [{"sheet": "Report", "cell": "D2", "expected": 5}],
+    }
+    if field == "requires_independent_recalculation":
+        payload["plan"][field] = value
+    else:
+        payload[field] = value
+
+    with pytest.raises(FormulaDeliveryError, match=message):
+        formula_rule_from_mapping(payload)

@@ -36,16 +36,24 @@ class FormulaDeliveryRule:
     engine: Literal["auto", "excel", "libreoffice"] = "auto"
 
     def fingerprint_payload(self) -> dict[str, Any]:
-        """Return rule identity for idempotency without persisting expected values."""
+        """Return complete rule identity for the in-memory idempotency hash."""
 
         return {
             "plan": self.plan.to_dict(),
             "sheet": self.sheet,
             "target_range": self.target_range,
-            "expectation_cells": sorted(
-                f"{item.sheet}!{item.cell}:tolerance={item.tolerance}"
-                for item in self.expectations
-            ),
+            "expectations": [
+                {
+                    "sheet": item.sheet,
+                    "cell": item.cell,
+                    "expected": item.expected,
+                    "tolerance": str(item.tolerance),
+                }
+                for item in sorted(
+                    self.expectations,
+                    key=lambda item: (item.sheet, item.cell, str(item.tolerance)),
+                )
+            ],
             "overwrite_formulas": self.overwrite_formulas,
             "engine": self.engine,
         }
@@ -75,6 +83,11 @@ def formula_rule_from_mapping(payload: Mapping[str, Any]) -> FormulaDeliveryRule
     raw_plan = payload.get("plan")
     if not isinstance(raw_plan, Mapping):
         raise FormulaDeliveryError("formula rule needs a plan object")
+    requires_recalculation = raw_plan.get("requires_independent_recalculation")
+    if not isinstance(requires_recalculation, bool):
+        raise FormulaDeliveryError(
+            "requires_independent_recalculation must be a boolean"
+        )
     try:
         plan = FormulaPlan(
             business_rule=str(raw_plan["business_rule"]).strip(),
@@ -84,9 +97,7 @@ def formula_rule_from_mapping(payload: Mapping[str, Any]) -> FormulaDeliveryRule
             value=raw_plan.get("value"),
             function=raw_plan.get("function"),
             compatibility_strategy=str(raw_plan["compatibility_strategy"]).strip(),
-            requires_independent_recalculation=bool(
-                raw_plan["requires_independent_recalculation"]
-            ),
+            requires_independent_recalculation=requires_recalculation,
         )
     except (KeyError, TypeError, ValueError) as error:
         raise FormulaDeliveryError("formula plan is incomplete") from error
@@ -112,6 +123,10 @@ def formula_rule_from_mapping(payload: Mapping[str, Any]) -> FormulaDeliveryRule
         raise FormulaDeliveryError(
             "formula mode requires independently derived expectations"
         )
+    if not plan.requires_independent_recalculation and expectations:
+        raise FormulaDeliveryError(
+            "static mode expectations are not verified; remove them"
+        )
     engine = str(payload.get("engine", "auto"))
     if engine not in {"auto", "excel", "libreoffice"}:
         raise FormulaDeliveryError("formula engine must be auto, excel, or libreoffice")
@@ -119,12 +134,15 @@ def formula_rule_from_mapping(payload: Mapping[str, Any]) -> FormulaDeliveryRule
     target_range = str(payload.get("target_range") or "").strip()
     if not sheet or not target_range:
         raise FormulaDeliveryError("formula rule needs sheet and target_range")
+    overwrite_formulas = payload.get("overwrite_formulas", False)
+    if not isinstance(overwrite_formulas, bool):
+        raise FormulaDeliveryError("overwrite_formulas must be a boolean")
     return FormulaDeliveryRule(
         plan,
         sheet,
         target_range,
         tuple(expectations),
-        bool(payload.get("overwrite_formulas", False)),
+        overwrite_formulas,
         engine,  # type: ignore[arg-type]
     )
 

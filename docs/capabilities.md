@@ -162,11 +162,11 @@ ingest → normalize/type inference → schema check → strict match → ambigu
 
 This loop is exercised end to end against synthetic fixtures and judged by the reopened delivery file. It is still not part of a tagged Release, and it only covers declared local workbook templates.
 
-## Not implemented or not yet complete end to end
+## Not implemented, conditional, or not yet complete end to end
 
 - cloud-target revision conflict handling for [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19). Run-level fingerprinting and the no-op short-circuit are implemented (capability 15), but the revision conflict check is only a forward-compatible interface until a real cloud connector exists;
 - [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
-- recalculated-formula proof, which requires Excel or LibreOffice rather than openpyxl;
+- recalculated-formula proof is implemented when an Excel or LibreOffice engine is available; runs without either engine remain explicitly unverified because openpyxl cannot provide calculation proof;
 - local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;
 - prompt-driven append, join, multi-tab delivery grouping, summaries, and pivot tables;
 - cross-source fact checking and regional rule calculations.

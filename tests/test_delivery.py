@@ -324,6 +324,29 @@ def test_formula_rules_change_the_idempotency_fingerprint(tmp_path: Path):
     )
 
 
+def test_changed_formula_rules_fail_when_no_records_can_be_staged(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("first"),))
+    scenario["targets"] = targets
+
+    first = _run(scenario, idempotency=_idempotent())
+    assert first.delivered is True
+
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("second"),))
+    scenario["targets"] = targets
+    second = _run(scenario, idempotency=_idempotent())
+
+    assert second.delivered is False
+    assert any(
+        failure.code == "formula_delivery_requires_records"
+        for failure in second.failures
+    )
+    north = next(item for item in second.targets if item.destination_key == NORTH)
+    assert north.status == "formula_delivery_failed"
+    assert load_run_record(state_path(scenario["delivery"]), TASK_KEY).status == FAILED
+
+
 def test_plan_is_checkable_before_any_file_is_touched(tmp_path: Path):
     scenario = _scenario(tmp_path)
 

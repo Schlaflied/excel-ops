@@ -1514,6 +1514,30 @@ def _write_and_verify(
         accepted = [outcomes[index] for index in positions]
         withheld = planned.expected_review
         if not accepted:
+            if target.formula_rules:
+                failures.append(
+                    DeliveryFailure(
+                        "formula_delivery_requires_records",
+                        f"{target.key}: formula rules changed, but no new records were accepted for a staged delivery.",
+                        "Provide a new delivery input, or migrate the existing workbook in a separate reviewed operation.",
+                        target.key,
+                    )
+                )
+                target_outcomes.append(
+                    TargetOutcome(
+                        target.key,
+                        planned.template_path,
+                        False,
+                        delivery_path=(
+                            planned.delivery_path
+                            if Path(planned.delivery_path).is_file()
+                            else None
+                        ),
+                        status="formula_delivery_failed",
+                        formula_evidence={"status": "failed"},
+                    )
+                )
+                continue
             target_outcomes.append(
                 TargetOutcome(
                     target.key,
