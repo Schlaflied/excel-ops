@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import ctypes
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -29,6 +30,7 @@ If Err.Number <> 0 Then
 End If
 excel.Visible = False
 excel.DisplayAlerts = False
+WScript.StdOut.WriteLine CStr(excel.Hwnd)
 Set workbook = excel.Workbooks.Open(args(0), 0, True)
 If Err.Number <> 0 Then
     exportError = Err.Number
@@ -64,7 +66,7 @@ def export_pdf_with_excel(
     *,
     sheets: Sequence[str] | None = None,
     cscript: str | Path | None = None,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
 ) -> Path:
     """Export selected sheets with native Excel on Windows and verify the PDF."""
 
@@ -97,20 +99,40 @@ def export_pdf_with_excel(
         with tempfile.TemporaryDirectory(prefix="excel-ops-ms-excel-") as temporary_name:
             script_path = Path(temporary_name) / "export.vbs"
             script_path.write_text(_VBSCRIPT_EXPORT, encoding="ascii")
+            process = None
             try:
-                result = runner(
+                process = popen(
                     [executable, "//NoLogo", "//B", str(script_path), str(source_path),
                      str(staged), *selected],
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    timeout=120,
-                    check=False,
                 )
-            except (OSError, subprocess.TimeoutExpired) as error:
+                if process.stdout is None:
+                    raise ExcelPdfExportError("Windows Script Host stdout is unavailable")
+                window_line = process.stdout.readline().strip()
+                try:
+                    excel_window = int(window_line)
+                except ValueError as error:
+                    process.communicate()
+                    raise ExcelPdfExportError(
+                        "Microsoft Excel did not provide a process window handle"
+                    ) from error
+                try:
+                    process.communicate(timeout=120)
+                except subprocess.TimeoutExpired as error:
+                    process.kill()
+                    process.communicate()
+                    cleaned = _terminate_excel_window(excel_window)
+                    detail = "terminated" if cleaned else "cleanup could not be confirmed"
+                    raise ExcelPdfExportError(
+                        f"Microsoft Excel PDF export timed out; Excel process {detail}"
+                    ) from error
+            except OSError as error:
                 raise ExcelPdfExportError(f"Microsoft Excel could not run: {error}") from error
-            if result.returncode != 0:
+            if process.returncode != 0:
                 raise ExcelPdfExportError(
-                    f"Microsoft Excel PDF export failed with exit code {result.returncode}"
+                    f"Microsoft Excel PDF export failed with exit code {process.returncode}"
                 )
         if not staged.is_file() or staged.stat().st_size < 5:
             raise ExcelPdfExportError("Microsoft Excel produced no usable PDF")
@@ -128,7 +150,12 @@ def _validated_sheets(source: Path, sheets: Sequence[str] | None) -> tuple[str, 
 
     workbook = load_workbook(source, read_only=True)
     try:
-        selected = tuple(workbook.sheetnames if sheets is None else sheets)
+        visible = tuple(
+            name
+            for name in workbook.sheetnames
+            if getattr(workbook[name], "sheet_state", "visible") == "visible"
+        )
+        selected = tuple(visible if sheets is None else sheets)
         if not selected:
             raise ExcelPdfExportError("Microsoft Excel PDF export requires at least one sheet")
         if len(set(selected)) != len(selected):
@@ -136,6 +163,11 @@ def _validated_sheets(source: Path, sheets: Sequence[str] | None) -> tuple[str, 
         missing = [name for name in selected if name not in workbook.sheetnames]
         if missing:
             raise ExcelPdfExportError(f"unknown worksheet(s): {', '.join(missing)}")
+        hidden = [name for name in selected if name not in visible]
+        if hidden:
+            raise ExcelPdfExportError(
+                f"hidden worksheet(s) cannot be exported: {', '.join(hidden)}"
+            )
         return selected
     finally:
         workbook.close()
@@ -145,6 +177,23 @@ def _find_cscript() -> str | None:
     """Locate the Windows Script Host command-line executable."""
 
     return shutil.which("cscript.exe")
+
+
+def _terminate_excel_window(window: int) -> bool:
+    """Terminate only the Excel process associated with the emitted window handle."""
+
+    process_id = ctypes.c_ulong()
+    if not ctypes.windll.user32.GetWindowThreadProcessId(
+        ctypes.c_void_p(window), ctypes.byref(process_id)
+    ):
+        return False
+    process = ctypes.windll.kernel32.OpenProcess(0x0001, False, process_id.value)
+    if not process:
+        return False
+    try:
+        return bool(ctypes.windll.kernel32.TerminateProcess(process, 1))
+    finally:
+        ctypes.windll.kernel32.CloseHandle(process)
 
 
 def _is_windows() -> bool:
