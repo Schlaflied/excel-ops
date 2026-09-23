@@ -1,3 +1,5 @@
+[中文](multi-format-export.zh-CN.md) | English
+
 # Multi-format delivery export contract
 
 This document defines the first implementation boundary for [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22). It is a contract and design slice for the Draft PR; it does not claim that CSV or PDF export is implemented yet.
