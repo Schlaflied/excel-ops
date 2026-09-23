@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import tempfile
 from dataclasses import dataclass
@@ -75,6 +77,20 @@ class FormulaDeliveryRule:
                 f"{item.sheet}!{item.cell}" for item in self.expectations
             ),
         }
+
+
+def formula_contract_fingerprint(rules: Sequence[FormulaDeliveryRule]) -> str:
+    """Hash the complete formula contract without persisting its raw values."""
+
+    payload = [rule.fingerprint_payload() for rule in rules]
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
 def formula_rule_from_mapping(payload: Mapping[str, Any]) -> FormulaDeliveryRule:
@@ -194,6 +210,7 @@ def apply_formula_delivery(
         return {
             "status": "verified",
             "engine": None,
+            "contract_fingerprint": formula_contract_fingerprint(rules),
             "rules": application_evidence,
             "finding_codes": [],
         }
@@ -227,6 +244,7 @@ def apply_formula_delivery(
         return {
             "status": result.status,
             "engine": result.engine,
+            "contract_fingerprint": formula_contract_fingerprint(rules),
             "rules": application_evidence,
             "finding_codes": sorted({item.code for item in result.findings}),
         }

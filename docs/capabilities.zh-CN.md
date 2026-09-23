@@ -166,7 +166,7 @@ ingest → normalize/type inference → schema check → strict match → ambigu
 
 - [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) 的云端目标 revision 冲突处理。运行级指纹与 no-op 短路已实现（能力 15），但在真正的云端连接器出现之前，revision 冲突检查只是一个向前兼容的接口；
 - [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
-- 公式重算证据已在可用 Excel 或 LibreOffice 引擎时实现；没有任一引擎的运行仍会明确标记为未验证，因为 openpyxl 无法提供计算证据；
+- 公式重算证据已在可用 Excel 或 LibreOffice 引擎时实现；如果公式规则要求独立复算而没有任一引擎，交付会以 `formula_delivery_failed` 失败，而不会交付工作簿；不要求独立复算的静态规则仍可在无引擎时交付，但不提供公式重算证据；
 - 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；
 - Prompt 驱动的 append、join、多 Tab delivery grouping、汇总和透视表；
 - 跨来源事实判断与地区法规计算。

@@ -33,8 +33,9 @@ from excel_ops.delivery import (
 from excel_ops.delivery_manifest import load_delivery_manifest
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
-from excel_ops.formula_delivery import FormulaDeliveryRule
+from excel_ops.formula_delivery import FormulaDeliveryRule, apply_formula_delivery
 from excel_ops.formula_planning import FormulaPlan
+from excel_ops.formula_recalculation import FormulaValueExpectation
 from excel_ops.idempotency import (
     CHANGED,
     FAILED,
@@ -296,6 +297,64 @@ def test_run_delivery_applies_formula_rules_and_records_manifest_evidence(tmp_pa
     assert "expected" not in json.dumps(manifest.formulas)
 
 
+def test_run_delivery_applies_formula_rules_with_independent_recalculation(
+    tmp_path: Path, monkeypatch
+):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(
+        targets[0],
+        formula_rules=(
+            FormulaDeliveryRule(
+                FormulaPlan(
+                    business_rule="Record the independently calculated marker.",
+                    operation="addition",
+                    output_mode="formula",
+                    target_excel_version="365",
+                    value="=1+1",
+                    function="addition",
+                    compatibility_strategy=(
+                        "basic arithmetic works in all target versions"
+                    ),
+                    requires_independent_recalculation=True,
+                ),
+                "北区",
+                "H5",
+                (FormulaValueExpectation("北区", "H5", 2),),
+            ),
+        ),
+    )
+    scenario["targets"] = targets
+
+    def recalculate(source: Path, destination: Path) -> str:
+        workbook = load_workbook(source)
+        workbook["北区"]["H5"] = 2
+        workbook.save(destination)
+        workbook.close()
+        return "test-engine"
+
+    def apply_with_test_engine(path, rules):
+        return apply_formula_delivery(path, rules, recalculator=recalculate)
+
+    monkeypatch.setattr(
+        "excel_ops.delivery.apply_formula_delivery",
+        apply_with_test_engine,
+    )
+
+    result = _run(scenario)
+
+    assert result.delivered is True
+    north = next(item for item in result.targets if item.destination_key == NORTH)
+    workbook = load_workbook(north.delivery_path, data_only=True)
+    try:
+        assert workbook["北区"]["H5"].value == 2
+    finally:
+        workbook.close()
+    manifest = next(item for item in result.manifests if item.destination_key == NORTH)
+    assert manifest.formulas["status"] == "verified"
+    assert manifest.formulas["engine"] == "test-engine"
+
+
 def test_formula_rules_change_the_idempotency_fingerprint(tmp_path: Path):
     scenario = _scenario(tmp_path)
     targets = list(scenario["targets"])
@@ -345,6 +404,29 @@ def test_changed_formula_rules_fail_when_no_records_can_be_staged(tmp_path: Path
     north = next(item for item in second.targets if item.destination_key == NORTH)
     assert north.status == "formula_delivery_failed"
     assert load_run_record(state_path(scenario["delivery"]), TASK_KEY).status == FAILED
+
+
+def test_unchanged_formula_rules_reuse_the_verified_existing_workbook(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("same"),))
+    scenario["targets"] = targets
+
+    first = _run(scenario)
+    assert first.delivered is True
+    north_path = Path(
+        next(item for item in first.targets if item.destination_key == NORTH).delivery_path
+    )
+    before = north_path.read_bytes()
+
+    second = _run(scenario)
+
+    assert second.delivered is True
+    assert second.failures == ()
+    north = next(item for item in second.targets if item.destination_key == NORTH)
+    assert north.status == "no_new_records"
+    assert north.formula_evidence["status"] == "verified"
+    assert north_path.read_bytes() == before
 
 
 def test_plan_is_checkable_before_any_file_is_touched(tmp_path: Path):

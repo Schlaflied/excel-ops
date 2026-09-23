@@ -59,6 +59,7 @@ from .formula_delivery import (
     FormulaDeliveryError,
     FormulaDeliveryRule,
     apply_formula_delivery,
+    formula_contract_fingerprint,
     formula_rule_from_mapping,
 )
 from .idempotency import (
@@ -1515,6 +1516,27 @@ def _write_and_verify(
         withheld = planned.expected_review
         if not accepted:
             if target.formula_rules:
+                existing_manifest = read_delivery_manifest(planned.delivery_path)
+                expected_contract = formula_contract_fingerprint(target.formula_rules)
+                if (
+                    existing_manifest is not None
+                    and existing_manifest.verification.passed
+                    and existing_manifest.reconciled
+                    and existing_manifest.formulas.get("status") == "verified"
+                    and existing_manifest.formulas.get("contract_fingerprint")
+                    == expected_contract
+                ):
+                    target_outcomes.append(
+                        TargetOutcome(
+                            target.key,
+                            planned.template_path,
+                            False,
+                            delivery_path=planned.delivery_path,
+                            status="no_new_records",
+                            formula_evidence=dict(existing_manifest.formulas),
+                        )
+                    )
+                    continue
                 failures.append(
                     DeliveryFailure(
                         "formula_delivery_requires_records",

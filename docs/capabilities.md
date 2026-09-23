@@ -166,7 +166,7 @@ This loop is exercised end to end against synthetic fixtures and judged by the r
 
 - cloud-target revision conflict handling for [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19). Run-level fingerprinting and the no-op short-circuit are implemented (capability 15), but the revision conflict check is only a forward-compatible interface until a real cloud connector exists;
 - [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
-- recalculated-formula proof is implemented when an Excel or LibreOffice engine is available; runs without either engine remain explicitly unverified because openpyxl cannot provide calculation proof;
+- recalculated-formula proof is implemented when an Excel or LibreOffice engine is available; if a formula rule requires independent recalculation and neither engine is available, delivery fails with `formula_delivery_failed` instead of producing a delivered workbook; static rules that do not require independent recalculation can still be delivered without an engine, but do not provide recalculation proof;
 - local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;
 - prompt-driven append, join, multi-tab delivery grouping, summaries, and pivot tables;
 - cross-source fact checking and regional rule calculations.
