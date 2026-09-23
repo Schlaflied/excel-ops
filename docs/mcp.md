@@ -43,6 +43,8 @@ By default the bridge runs `python -m excel_ops.cli`. `EXCEL_OPS_PYTHON` may poi
 
 The intended Agent sequence is `scan_workdir → prepare_delivery → plan_delivery → explicit user approval → run_delivery`. Preparation accepts structured intent rather than natural language: the Host Agent selects inputs and supplies the target template, sheet, and field mapping. Missing business decisions return `needs_review` and no executable plan is written. Paths are confined to explicit authorized roots, existing plans are not overwritten by default, and a replacement requires the current SHA-256 digest.
 
+Targets may also include typed `formulas` produced from the user's business goal. Formula mode requires explicit independent expectations; the dry run exposes the rule and target range, while the approved run applies it to the staged workbook, recalculates with Excel or LibreOffice, and records formula evidence in the delivery Manifest. Formula rules participate in the idempotency fingerprint.
+
 `run_delivery` requires `confirmed: true`. The caller must set it only after presenting the dry-run plan and obtaining explicit user approval. MCP annotations help a host display the distinction, but the required confirmation field is also validated by the server.
 
 Every tool returns the `excel-ops-agent-v1` envelope:

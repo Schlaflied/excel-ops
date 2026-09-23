@@ -153,7 +153,7 @@ Merged modules, repository tests, and a verified persisted file are separate kin
 
 [See the complete capability ledger, implementation status, safety boundaries, and linked issues/PRs](docs/capabilities.md).
 
-`main` now includes multi-format XLSX/CSV/PDF delivery ([#22](https://github.com/Schlaflied/excel-ops/issues/22), [docs](docs/multi-format-export.md)). Natural-language formula generation remains in progress: its first typed, version-aware planning slice is documented in [formula planning](docs/formula-planning.md). Every cloud connector is still out of scope. Semantic currency and precision rules are documented in [the number-format policy guide](docs/number-format-policy.md).
+`main` now includes multi-format XLSX/CSV/PDF delivery ([#22](https://github.com/Schlaflied/excel-ops/issues/22), [docs](docs/multi-format-export.md)). Natural-language formula generation remains in progress: typed, version-aware planning, safe workbook application, independent recalculation, and the Agent delivery contract are documented in [formula planning](docs/formula-planning.md). Every cloud connector is still out of scope. Semantic currency and precision rules are documented in [the number-format policy guide](docs/number-format-policy.md).
 
 ## License
 

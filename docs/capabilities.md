@@ -108,8 +108,8 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 
 ### 13. Integrated end-to-end delivery run
 
-- **What it does:** `run_delivery(...)` chains ingestion, the data contract, strict matching, ambiguity confirmation and Recipes, a checkable plan or dry run, staged template write-back, independent verification, and optional formula checks into one agent-callable run, also exposed as `excel-ops deliver`.
-- **Output and evidence:** one JSON-serializable result with per-record terminal state, stable record IDs, source provenance for every delivered cell, per-target actual delivery paths, verification findings, and failure codes; covered by a synthetic end-to-end fixture with two input layouts, an image-extraction JSON, and two templates.
+- **What it does:** `run_delivery(...)` chains ingestion, the data contract, strict matching, ambiguity confirmation and Recipes, a checkable plan or dry run, staged template write-back, typed formula application and independent recalculation, and persisted-file verification into one agent-callable run, also exposed as `excel-ops deliver`.
+- **Output and evidence:** one JSON-serializable result with per-record terminal state, stable record IDs, source provenance for every delivered cell, per-target actual delivery paths, formula evidence, verification findings, and failure codes; formula rules also enter the idempotency fingerprint and delivery Manifest.
 - **Safety boundary:** a save is never reported as a delivery — only a target whose reopened file passed verification is published; unresolved ambiguities, conflicts, and duplicates never reach accepted; a skipped mapped cell fails the run closed instead of delivering a partial row; inputs and templates stay unmodified.
 - **Implementation:** [Issue #46](https://github.com/Schlaflied/excel-ops/issues/46) / [Detailed guide](delivery-pipeline.md)
 

@@ -33,6 +33,8 @@ from excel_ops.delivery import (
 from excel_ops.delivery_manifest import load_delivery_manifest
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
+from excel_ops.formula_delivery import FormulaDeliveryRule
+from excel_ops.formula_planning import FormulaPlan
 from excel_ops.idempotency import (
     CHANGED,
     FAILED,
@@ -250,9 +252,76 @@ def _assert_originals_untouched(scenario: dict[str, object]) -> None:
         assert path.read_bytes() == content, f"original file changed: {path.name}"
 
 
+def _static_formula_rule(value="approved") -> FormulaDeliveryRule:
+    return FormulaDeliveryRule(
+        FormulaPlan(
+            business_rule="Record the independently approved review marker.",
+            operation="static_marker",
+            output_mode="static",
+            target_excel_version="365",
+            value=value,
+            function=None,
+            compatibility_strategy="static value supplied independently",
+            requires_independent_recalculation=False,
+        ),
+        sheet="北区",
+        target_range="H5",
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Success path
 # --------------------------------------------------------------------------- #
+
+
+def test_run_delivery_applies_formula_rules_and_records_manifest_evidence(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule(),))
+    scenario["targets"] = targets
+
+    result = _run(scenario)
+
+    assert result.delivered is True
+    north = next(item for item in result.targets if item.destination_key == NORTH)
+    workbook = load_workbook(north.delivery_path)
+    try:
+        assert workbook["北区"]["H5"].value == "approved"
+    finally:
+        workbook.close()
+    manifest = next(item for item in result.manifests if item.destination_key == NORTH)
+    assert manifest.formulas["status"] == "verified"
+    assert manifest.formulas["engine"] is None
+    assert manifest.formulas["rules"][0]["business_rule"].startswith("Record")
+    assert "expected" not in json.dumps(manifest.formulas)
+
+
+def test_formula_rules_change_the_idempotency_fingerprint(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("first"),))
+    first = run_delivery(
+        scenario["inputs"],
+        targets,
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+        dry_run=True,
+        idempotency=_idempotent(),
+    )
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("second"),))
+    second = run_delivery(
+        scenario["inputs"],
+        targets,
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+        dry_run=True,
+        idempotency=_idempotent(),
+    )
+
+    assert first.fingerprint != second.fingerprint
+    assert first.run_decision.fingerprint.components["mapping"] != (
+        second.run_decision.fingerprint.components["mapping"]
+    )
 
 
 def test_plan_is_checkable_before_any_file_is_touched(tmp_path: Path):

@@ -66,6 +66,34 @@ def test_prepare_writes_one_valid_plan_without_touching_workbooks(tmp_path: Path
     assert not (tmp_path / "delivery").exists()
 
 
+def test_prepare_preserves_formula_rules_for_agent_delivery(tmp_path: Path):
+    request = _scenario(tmp_path)
+    request["targets"][0]["formulas"] = [
+        {
+            "plan": {
+                "business_rule": "Use the independently approved marker.",
+                "operation": "static_marker",
+                "output_mode": "static",
+                "target_excel_version": "365",
+                "value": "approved",
+                "function": None,
+                "compatibility_strategy": "static value supplied independently",
+                "requires_independent_recalculation": False,
+            },
+            "sheet": "Data",
+            "target_range": "G2",
+            "expectations": [],
+        }
+    ]
+
+    prepare_delivery_plan(request)
+
+    payload = json.loads((tmp_path / "delivery-plan.json").read_text(encoding="utf-8"))
+    targets, _ = load_delivery_targets(payload, base_dir=tmp_path)
+    assert targets[0].formula_rules[0].plan.business_rule.startswith("Use")
+    assert targets[0].formula_rules[0].target_range == "G2"
+
+
 def test_missing_business_decisions_return_review_without_a_plan(tmp_path: Path):
     result = prepare_delivery_plan(
         {
