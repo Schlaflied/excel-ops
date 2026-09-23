@@ -343,7 +343,10 @@ def _write_plan_locked(
 def _verified_parent(parent: Path) -> Iterator[int | None]:
     """Hold a verified parent stable while the final entry is accessed."""
 
-    if os.open not in os.supports_dir_fd or os.replace not in os.supports_dir_fd:
+    # os.replace delegates to os.rename, and CPython records dir_fd support
+    # under os.rename rather than the alias.  Checking os.replace here makes
+    # capable POSIX hosts incorrectly fall through to the Windows path guard.
+    if os.open not in os.supports_dir_fd or os.rename not in os.supports_dir_fd:
         with _hold_windows_path(parent):
             yield None
         return
