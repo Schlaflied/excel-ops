@@ -70,6 +70,8 @@ def parse_export_formats(payload: Mapping[str, object]) -> ExportFormatSelection
         raise ExportFormatError("delivery.csv must be an object")
     csv_mode = raw_csv.get("mode")
     csv_sheet = raw_csv.get("sheet")
+    if csv_sheet is not None and not isinstance(csv_sheet, str):
+        raise ExportFormatError("csv.sheet must be a string")
     if "csv" in formats:
         if csv_mode not in ("one-file-per-sheet", "single-sheet"):
             raise ExportFormatError(
@@ -90,7 +92,11 @@ def parse_export_formats(payload: Mapping[str, object]) -> ExportFormatSelection
     if "pdf" in formats:
         if pdf_sheets == "all":
             normalized_pdf = None
-        elif isinstance(pdf_sheets, Sequence) and not isinstance(pdf_sheets, str):
+        elif (
+            isinstance(pdf_sheets, Sequence)
+            and not isinstance(pdf_sheets, str)
+            and len(pdf_sheets) > 0
+        ):
             if not all(isinstance(item, str) and item.strip() for item in pdf_sheets):
                 raise ExportFormatError("pdf.sheets must contain non-empty sheet names")
             normalized_pdf = tuple(pdf_sheets)

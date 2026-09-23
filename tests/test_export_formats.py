@@ -24,7 +24,7 @@ def test_legacy_config_keeps_xlsx_default(tmp_path):
 
 
 def test_csv_requires_explicit_single_sheet_or_per_sheet_mode(tmp_path):
-    with pytest.raises(DeliveryPlanError, match="csv.mode"):
+    with pytest.raises(DeliveryPlanError, match=r"csv\.mode"):
         load_delivery_targets(_payload(formats=["csv"]), base_dir=tmp_path)
 
 
@@ -49,3 +49,18 @@ def test_pdf_all_sheets_is_supported(tmp_path):
         _payload(formats=["pdf"], pdf={"sheets": "all"}), base_dir=tmp_path
     )
     assert options["export_selection"]["pdf"] is None
+
+
+def test_csv_sheet_must_be_a_string(tmp_path):
+    with pytest.raises(DeliveryPlanError, match="csv.sheet must be a string"):
+        load_delivery_targets(
+            _payload(formats=["csv"], csv={"mode": "single-sheet", "sheet": 3}),
+            base_dir=tmp_path,
+        )
+
+
+def test_pdf_sheet_list_must_not_be_empty(tmp_path):
+    with pytest.raises(DeliveryPlanError, match="pdf.sheets"):
+        load_delivery_targets(
+            _payload(formats=["pdf"], pdf={"sheets": []}), base_dir=tmp_path
+        )
