@@ -20,6 +20,15 @@ class _Page:
         return self._text
 
 
+class _BrokenPage:
+    @property
+    def mediabox(self):
+        raise ValueError("broken media box")
+
+    def extract_text(self) -> str:
+        raise ValueError("broken content stream")
+
+
 def _source(path: Path, *, rows: int = 2, repeat_header: bool = False) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -101,3 +110,43 @@ def test_configured_repeat_header_must_appear_on_every_page(tmp_path, monkeypatc
 
     assert result.passed is False
     assert "repeated_header_missing" in {item.code for item in result.findings}
+
+
+def test_page_read_errors_are_reported_without_stopping_later_pages(tmp_path, monkeypatch):
+    source = tmp_path / "report.xlsx"
+    _source(source)
+    monkeypatch.setattr(
+        "excel_ops.pdf_layout_verification.PdfReader",
+        lambda path: type(
+            "Reader", (), {"pages": [_BrokenPage(), _Page("Header Boundary")]}
+        )(),
+    )
+
+    result = verify_pdf_layout(source, tmp_path / "report.pdf", sheets=["Report"])
+
+    assert result.pages == 2
+    assert {item.code for item in result.findings} == {
+        "invalid_page_bounds",
+        "unreadable_page",
+    }
+
+
+def test_boundary_tokens_ignore_formula_and_number_cells(tmp_path, monkeypatch):
+    source = tmp_path / "report.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Report"
+    sheet["A1"] = "Header"
+    sheet["A2"] = "Boundary"
+    sheet["A3"] = "=SUM(B3:B4)"
+    sheet["A4"] = 42
+    workbook.save(source)
+    workbook.close()
+    monkeypatch.setattr(
+        "excel_ops.pdf_layout_verification.PdfReader",
+        lambda path: type("Reader", (), {"pages": [_Page("Header Boundary")]})(),
+    )
+
+    result = verify_pdf_layout(source, tmp_path / "report.pdf", sheets=["Report"])
+
+    assert result.passed is True

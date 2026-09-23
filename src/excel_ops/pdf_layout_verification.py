@@ -64,17 +64,38 @@ def verify_pdf_layout(
 
     page_text: list[str] = []
     for index, page in enumerate(pages, start=1):
-        width = float(page.mediabox.width)
-        height = float(page.mediabox.height)
-        if width <= 0 or height <= 0 or width > 2000 or height > 2000:
+        try:
+            width = float(page.mediabox.width)
+            height = float(page.mediabox.height)
+        except Exception as error:
             findings.append(
                 PdfLayoutFinding(
                     "invalid_page_bounds",
-                    "The rendered page has invalid or unreasonable dimensions.",
+                    f"The rendered page dimensions could not be read: {error}",
                     page=index,
                 )
             )
-        text = page.extract_text() or ""
+        else:
+            if width <= 0 or height <= 0 or width > 2000 or height > 2000:
+                findings.append(
+                    PdfLayoutFinding(
+                        "invalid_page_bounds",
+                        "The rendered page has invalid or unreasonable dimensions.",
+                        page=index,
+                    )
+                )
+        try:
+            text = page.extract_text() or ""
+        except Exception as error:
+            findings.append(
+                PdfLayoutFinding(
+                    "unreadable_page",
+                    f"Text could not be extracted from the rendered page: {error}",
+                    page=index,
+                )
+            )
+            page_text.append("")
+            continue
         page_text.append(_normalize(text))
         if not text.strip():
             findings.append(
@@ -151,7 +172,11 @@ def _boundary_tokens(worksheet) -> tuple[str, ...]:
     first: str | None = None
     last: str | None = None
     for row in worksheet.iter_rows():
-        populated = [cell.value for cell in row if cell.value not in (None, "")]
+        populated = [
+            cell.value
+            for cell in row
+            if cell.data_type in {"s", "inlineStr"} and cell.value not in (None, "")
+        ]
         if populated:
             first = first or str(populated[0])
             last = str(populated[-1])
