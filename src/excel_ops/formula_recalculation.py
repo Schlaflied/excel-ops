@@ -233,7 +233,17 @@ def _verify_formula_preservation(
     findings: list[VerificationFinding] = []
     try:
         for region in regions:
-            if region.sheet not in before.sheetnames or region.sheet not in after.sheetnames:
+            if region.sheet not in before.sheetnames:
+                continue
+            if region.sheet not in after.sheetnames:
+                findings.append(
+                    VerificationFinding(
+                        "recalculated_formula_sheet_missing",
+                        "The recalculation output omitted a declared formula sheet.",
+                        "Restore the formula sheet and rerun recalculation.",
+                        sheet=region.sheet,
+                    )
+                )
                 continue
             min_col, min_row, max_col, max_row = range_boundaries(region.cell_range)
             source_sheet = before[region.sheet]

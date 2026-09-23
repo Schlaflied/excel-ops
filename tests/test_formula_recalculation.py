@@ -113,6 +113,37 @@ def test_recalculation_rejects_an_engine_that_removes_the_formula(tmp_path):
     assert not output.exists()
 
 
+def test_recalculation_rejects_output_that_drops_a_formula_sheet(tmp_path):
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "recalculated.xlsx"
+    _source(source)
+    workbook = load_workbook(source)
+    workbook.create_sheet("Evidence")["A1"] = 7
+    workbook.save(source)
+    workbook.close()
+
+    def drop_formula_sheet(source: Path, destination: Path) -> str:
+        recalculated = load_workbook(source)
+        del recalculated["Report"]
+        recalculated.save(destination)
+        recalculated.close()
+        return "test-engine"
+
+    result = verify_formula_recalculation(
+        source,
+        output,
+        expectations=(FormulaValueExpectation("Evidence", "A1", 7),),
+        formula_regions=(FormulaRegion("Report", "C2:C2"),),
+        recalculator=drop_formula_sheet,
+    )
+
+    assert result.status == "failed"
+    assert "recalculated_formula_sheet_missing" in {
+        item.code for item in result.findings
+    }
+    assert not output.exists()
+
+
 def test_recalculation_uses_numeric_tolerance(tmp_path):
     source = tmp_path / "source.xlsx"
     output = tmp_path / "recalculated.xlsx"
