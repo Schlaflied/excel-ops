@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import zipfile
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -327,10 +330,8 @@ def test_run_delivery_applies_formula_rules_with_independent_recalculation(
     scenario["targets"] = targets
 
     def recalculate(source: Path, destination: Path) -> str:
-        workbook = load_workbook(source)
-        workbook["北区"]["H5"] = 2
-        workbook.save(destination)
-        workbook.close()
+        shutil.copy2(source, destination)
+        _replace_cached_formula_value(destination, "H5", "2")
         return "test-engine"
 
     def apply_with_test_engine(path, rules):
@@ -345,14 +346,85 @@ def test_run_delivery_applies_formula_rules_with_independent_recalculation(
 
     assert result.delivered is True
     north = next(item for item in result.targets if item.destination_key == NORTH)
-    workbook = load_workbook(north.delivery_path, data_only=True)
+    workbook = load_workbook(north.delivery_path, data_only=False)
     try:
-        assert workbook["北区"]["H5"].value == 2
+        assert workbook["北区"]["H5"].value == "=1+1"
     finally:
         workbook.close()
     manifest = next(item for item in result.manifests if item.destination_key == NORTH)
     assert manifest.formulas["status"] == "verified"
     assert manifest.formulas["engine"] == "test-engine"
+
+
+def _replace_cached_formula_value(path: Path, cell_reference: str, value: str) -> None:
+    replacement = path.with_suffix(".replacement.xlsx")
+    worksheet_path = "xl/worksheets/sheet1.xml"
+    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    with zipfile.ZipFile(path) as source, zipfile.ZipFile(
+        replacement, "w"
+    ) as destination:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == worksheet_path:
+                root = ET.fromstring(data)
+                cell = root.find(f".//{namespace}c[@r='{cell_reference}']")
+                assert cell is not None
+                cached = cell.find(f"{namespace}v")
+                assert cached is not None
+                cached.text = value
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            destination.writestr(item, data)
+    replacement.replace(path)
+
+
+def test_run_delivery_rejects_recalculation_that_removes_formula(
+    tmp_path: Path, monkeypatch
+):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(
+        targets[0],
+        formula_rules=(
+            FormulaDeliveryRule(
+                FormulaPlan(
+                    business_rule="Record the independently calculated marker.",
+                    operation="addition",
+                    output_mode="formula",
+                    target_excel_version="365",
+                    value="=1+1",
+                    function="addition",
+                    compatibility_strategy="basic arithmetic",
+                    requires_independent_recalculation=True,
+                ),
+                "北区",
+                "H5",
+                (FormulaValueExpectation("北区", "H5", 2),),
+            ),
+        ),
+    )
+    scenario["targets"] = targets
+
+    def remove_formula(source: Path, destination: Path) -> str:
+        workbook = load_workbook(source)
+        workbook["北区"]["H5"] = 2
+        workbook.save(destination)
+        workbook.close()
+        return "test-engine"
+
+    def apply_with_bad_engine(path, rules):
+        return apply_formula_delivery(path, rules, recalculator=remove_formula)
+
+    monkeypatch.setattr(
+        "excel_ops.delivery.apply_formula_delivery",
+        apply_with_bad_engine,
+    )
+
+    result = _run(scenario)
+
+    assert result.delivered is False
+    north = next(item for item in result.targets if item.destination_key == NORTH)
+    assert north.status == "formula_delivery_failed"
+    assert any(failure.code == "formula_delivery_failed" for failure in result.failures)
 
 
 def test_formula_rules_change_the_idempotency_fingerprint(tmp_path: Path):

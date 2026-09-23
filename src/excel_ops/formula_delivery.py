@@ -88,9 +88,19 @@ def formula_contract_fingerprint(rules: Sequence[FormulaDeliveryRule]) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
-        default=str,
+        default=_fingerprint_json_default,
     )
     return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
+def _fingerprint_json_default(value: Any) -> dict[str, str]:
+    """Preserve the runtime type of non-JSON values in contract hashes."""
+
+    value_type = type(value)
+    return {
+        "type": f"{value_type.__module__}.{value_type.__qualname__}",
+        "value": str(value),
+    }
 
 
 def formula_rule_from_mapping(payload: Mapping[str, Any]) -> FormulaDeliveryRule:
