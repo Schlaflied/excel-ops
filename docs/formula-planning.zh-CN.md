@@ -12,4 +12,8 @@ Issue [#25](https://github.com/Schlaflied/excel-ops/issues/25) 首先建立类�
 
 `plan_formula_application(...)` 针对明确的 Sheet 和有边界的目标范围生成不含单元格值的 dry run ledger。`apply_formula_plan(...)` 必须显式传入 `confirmed=True`，始终写入新工作簿并保留源文件；已有输出会被拒绝，默认跳过受保护公式和合并区域非锚点，批量填充时转换相对引用，并在发布文件前重新打开暂存副本，逐项核对计划写入。只有显式设置 `overwrite_formulas=True` 才能替换公式。静态值暂时只允许写入单个目标单元格，直到后续契约可以为每一行携带独立计算值。
 
-真实计算引擎的独立验证，以及与 #11 验证器和 #19 幂等记录的集成，仍保留为 #25 的后续切片。
+## 完整性与独立复算
+
+`verify_formula_recalculation(...)` 首先运行现有 #11 静态检查，覆盖断裂引用、缺失 Sheet、无效范围、错误 token、声明区域的填充缺口和循环引用；随后优先在 Windows 使用 Microsoft Excel，不可用时使用 LibreOffice，对暂存副本执行复算，并把计算引擎生成的缓存值与明确提供的独立期望值进行对账，可配置数值容差。只有所有检查通过才发布复算副本。
+
+没有可用计算引擎时返回 `recalculation_not_verified`；未提供期望值时返回 `recalculation_expectations_missing`。两者都保持 `unverified`，不会冒充 `verified`。公式错误或期望值不一致会返回 `failed` 并丢弃暂存输出。与 #19 幂等记录的集成仍保留为 #25 的最后一个切片。

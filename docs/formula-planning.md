@@ -12,4 +12,8 @@ Formula mode returns formula text and marks the plan as requiring independent re
 
 `plan_formula_application(...)` produces a value-free dry-run ledger for an explicit sheet and bounded target range. `apply_formula_plan(...)` requires `confirmed=True`, always writes a new workbook, preserves the source, refuses an existing output, skips protected formulas and merged-range followers by default, translates relative references while filling a range, then reopens the staged copy to verify every planned write before publishing it. Formula replacement requires the explicit `overwrite_formulas=True` option. Static values are limited to one target cell until a later contract can carry one independently computed value per row.
 
-Independent calculation-engine verification and integration with the #11 verifier and #19 idempotency record remain follow-up slices of #25.
+## Integrity and independent recalculation
+
+`verify_formula_recalculation(...)` first runs the existing #11 static checks for broken references, missing sheets, invalid ranges, error tokens, declared fill gaps, and circular references. It then recalculates a staged copy with Microsoft Excel on Windows when available, otherwise with LibreOffice, and compares the engine-produced cached values against explicit independently derived expectations with optional numeric tolerances. The verified copy is published only when all checks pass.
+
+No installed engine produces `recalculation_not_verified`; omitted expectations produce `recalculation_expectations_missing`. Both remain `unverified`, never `verified`. A formula error or expectation mismatch is `failed` and the staged output is discarded. Integration with the #19 idempotency record remains the final follow-up slice of #25.
