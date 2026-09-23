@@ -51,3 +51,36 @@ def test_csv_rejects_ambiguous_or_missing_sheets(tmp_path):
         export_csv(source, tmp_path / "out.csv", sheet="Payroll", sheets=["Summary"])
     with pytest.raises(WorkbookExportError, match="unknown worksheet"):
         export_csv(source, tmp_path / "out.csv", sheet="Missing")
+
+
+def test_csv_preserves_explicit_empty_selection_as_an_error(tmp_path):
+    source = tmp_path / "source.xlsx"
+    _workbook(source)
+    with pytest.raises(WorkbookExportError, match="at least one sheet"):
+        export_csv(source, tmp_path / "csv", sheets=[])
+
+
+def test_csv_sanitizes_windows_sheet_names(tmp_path):
+    source = tmp_path / "source.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "CON"
+    workbook.create_sheet("Summary")
+    workbook.save(source)
+    outputs = export_csv(source, tmp_path / "csv", sheets=["CON", "Summary"])
+    assert [path.name for path in outputs] == ["_CON.csv", "Summary.csv"]
+
+
+def test_csv_rejects_formula_without_cached_result(tmp_path):
+    source = tmp_path / "source.xlsx"
+    workbook = Workbook()
+    workbook.active["A1"] = "=1+1"
+    workbook.save(source)
+    with pytest.raises(WorkbookExportError, match="no cached result"):
+        export_csv(source, tmp_path / "out.csv", sheet="Sheet")
+
+
+def test_xlsm_is_not_silently_renamed_to_xlsx(tmp_path):
+    source = tmp_path / "source.xlsm"
+    source.write_bytes(b"not a workbook")
+    with pytest.raises(WorkbookExportError, match="XLSX source"):
+        export_xlsx(source, tmp_path / "out.xlsx")
