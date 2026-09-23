@@ -110,6 +110,14 @@ from .formula_verification import (
     FormulaVerifier,
     SummaryReconciliation,
 )
+from .formula_planning import (
+    ConditionalSumFormulaSpec,
+    DateAddFormulaSpec,
+    FormulaPlan,
+    FormulaPlanError,
+    LookupFormulaSpec,
+    plan_formula,
+)
 from .pipeline import run_pipeline
 from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .workdir import (
@@ -221,6 +229,12 @@ __all__ = [
     "FormulaRegion",
     "FormulaVerifier",
     "SummaryReconciliation",
+    "ConditionalSumFormulaSpec",
+    "DateAddFormulaSpec",
+    "FormulaPlan",
+    "FormulaPlanError",
+    "LookupFormulaSpec",
+    "plan_formula",
     "verify_output_name",
     "ClassificationOverride",
     "DuplicateGroup",

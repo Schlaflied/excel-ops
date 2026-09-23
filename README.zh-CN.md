@@ -151,7 +151,7 @@ v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift 检
 
 [查看完整能力清单、实现状态、安全边界以及对应的 Issue/PR](docs/capabilities.zh-CN.md)。
 
-`main` 上仍不在范围内：多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）；当前契约/设计切片见[多格式导出文档](docs/multi-format-export.zh-CN.md)。全部云端连接器也仍不在范围内。语义化币种与精度规则见[数字格式策略文档](docs/number-format-policy.zh-CN.md)。
+`main` 现已包含 XLSX/CSV/PDF 多格式交付（[#22](https://github.com/Schlaflied/excel-ops/issues/22)，[文档](docs/multi-format-export.zh-CN.md)）。自然语言公式生成仍在推进中；首个类型化、版本感知的规划切片见[公式规划文档](docs/formula-planning.zh-CN.md)。全部云端连接器仍不在范围内。语义化币种与精度规则见[数字格式策略文档](docs/number-format-policy.zh-CN.md)。
 
 ## 许可证
 
