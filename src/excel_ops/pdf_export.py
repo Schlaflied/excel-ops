@@ -106,20 +106,37 @@ def _validated_sheets(source: Path, sheets: Sequence[str] | None) -> tuple[str, 
 
 
 def _prepare_workbook(source: Path, destination: Path, selected: Sequence[str]) -> None:
-    """Expose selected sheets, retaining hidden worksheets needed by formulas."""
+    """Create an isolated selected-sheet workbook or reject unsafe dependencies."""
 
     workbook = load_workbook(source)
     try:
-        worksheet_names = {worksheet.title for worksheet in workbook.worksheets}
+        selected_names = set(selected)
+        if selected_names != set(workbook.sheetnames) and _cannot_isolate(workbook, selected_names):
+            raise PdfExportError(
+                "selected sheets cannot be isolated safely; export all sheets to preserve dependencies"
+            )
         for name in list(workbook.sheetnames):
             sheet = workbook[name]
-            if name in selected:
+            if name in selected_names:
                 sheet.sheet_state = "visible"
-            elif name in worksheet_names:
-                sheet.sheet_state = "hidden"
             else:
                 workbook.remove(sheet)
         workbook.active = workbook.sheetnames.index(selected[0])
         workbook.save(destination)
     finally:
         workbook.close()
+
+
+def _cannot_isolate(workbook, selected: set[str]) -> bool:
+    """Return whether a subset may depend on workbook content that would be removed."""
+
+    worksheet_names = {worksheet.title for worksheet in workbook.worksheets}
+    if any(name not in worksheet_names for name in selected):
+        return True
+    for name in selected:
+        worksheet = workbook[name]
+        if worksheet._charts:
+            return True
+        if any(cell.data_type == "f" for row in worksheet.iter_rows() for cell in row):
+            return True
+    return False

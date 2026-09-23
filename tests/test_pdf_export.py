@@ -33,11 +33,9 @@ def _renderer(command, **kwargs):
     assert profile_uri == (outdir / "profile").as_uri()
     workbook = load_workbook(prepared, read_only=True)
     try:
-        assert workbook.sheetnames == ["Report", "Archive"]
-        assert workbook["Report"].sheet_state == "visible"
-        assert workbook["Report"]["A1"].value == "=Archive!A1"
-        assert workbook["Archive"].sheet_state == "hidden"
-        assert workbook.active.title == "Report"
+        assert workbook.sheetnames == ["Archive"]
+        assert workbook["Archive"].sheet_state == "visible"
+        assert workbook.active.title == "Archive"
     finally:
         workbook.close()
     (outdir / "prepared.pdf").write_bytes(b"%PDF-1.7\nsynthetic")
@@ -45,12 +43,12 @@ def _renderer(command, **kwargs):
 
 
 def test_pdf_export_uses_selected_sheets_and_verifies_signature(tmp_path):
-    """Selected sheets stay visible while formula dependencies remain intact."""
+    """A dependency-free sheet subset is isolated before PDF conversion."""
 
     source = tmp_path / "source.xlsx"
     output = tmp_path / "report.pdf"
     _source(source)
-    assert export_pdf(source, output, sheets=["Report"], soffice="soffice", runner=_renderer) == output
+    assert export_pdf(source, output, sheets=["Archive"], soffice="soffice", runner=_renderer) == output
     assert output.read_bytes().startswith(b"%PDF-")
 
 
@@ -102,26 +100,12 @@ def test_pdf_export_reports_renderer_start_failure(tmp_path):
         export_pdf(source, tmp_path / "out.pdf", soffice="soffice", runner=missing_renderer)
 
 
-def test_pdf_export_keeps_a_selected_chartsheet_visible(tmp_path):
-    """Selected chart sheets remain renderable while worksheets stay as dependencies."""
+def test_pdf_export_rejects_unsafe_subset_dependencies(tmp_path):
+    """Formula and chart subsets fail instead of leaking unselected PDF pages."""
 
     source = tmp_path / "source.xlsx"
     _source(source)
-
-    def chart_renderer(command, **kwargs):
-        """Verify chart selection and publish a fake PDF."""
-
-        outdir = Path(command[command.index("--outdir") + 1])
-        workbook = load_workbook(Path(command[-1]), read_only=True)
-        try:
-            assert workbook.sheetnames == ["Report", "Archive", "Chart"]
-            assert workbook["Report"].sheet_state == "hidden"
-            assert workbook["Archive"].sheet_state == "hidden"
-            assert workbook["Chart"].sheet_state == "visible"
-            assert workbook.active.title == "Chart"
-        finally:
-            workbook.close()
-        (outdir / "prepared.pdf").write_bytes(b"%PDF-1.7\nsynthetic")
-        return CompletedProcess(command, 0, "", "")
-
-    export_pdf(source, tmp_path / "chart.pdf", sheets=["Chart"], soffice="soffice", runner=chart_renderer)
+    with pytest.raises(PdfExportError, match="cannot be isolated safely"):
+        export_pdf(source, tmp_path / "report.pdf", sheets=["Report"], soffice="soffice")
+    with pytest.raises(PdfExportError, match="cannot be isolated safely"):
+        export_pdf(source, tmp_path / "chart.pdf", sheets=["Chart"], soffice="soffice")
