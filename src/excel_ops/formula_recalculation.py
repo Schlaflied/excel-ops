@@ -20,17 +20,6 @@ from .formula_verification import FormulaRegion, FormulaVerifier
 
 
 RecalculationStatus = Literal["verified", "unverified", "failed"]
-_FORMULA_ERRORS = {
-    "#REF!",
-    "#DIV/0!",
-    "#VALUE!",
-    "#NAME?",
-    "#N/A",
-    "#NUM!",
-    "#NULL!",
-    "#SPILL!",
-    "#CALC!",
-}
 
 
 class FormulaRecalculationError(ValueError):
@@ -183,7 +172,7 @@ def _verify_values(
         for worksheet in workbook.worksheets:
             for row in worksheet.iter_rows():
                 for cell in row:
-                    if isinstance(cell.value, str) and cell.value.upper() in _FORMULA_ERRORS:
+                    if cell.data_type == "e":
                         error_cells.add((worksheet.title, cell.coordinate))
                         findings.append(
                             VerificationFinding(

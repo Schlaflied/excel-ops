@@ -139,7 +139,9 @@ def test_recalculation_scans_errors_outside_expected_cells(tmp_path):
     def recalculate(source: Path, destination: Path) -> str:
         workbook = load_workbook(source)
         workbook["Report"]["C2"] = 5
-        workbook["Report"]["D8"] = "#REF!"
+        error_cell = workbook["Report"]["D8"]
+        error_cell.value = "#GETTING_DATA"
+        error_cell.data_type = "e"
         workbook.save(destination)
         workbook.close()
         return "test-engine"
