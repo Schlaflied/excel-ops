@@ -91,6 +91,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.recipe:
             options["recipe_path"] = Path(args.recipe)
         inputs = options.pop("inputs")
+        # Format selection is validated at plan-load time.  Export adapters
+        # consume this contract in the export stage; the legacy XLSX delivery
+        # runner must not receive these future-only options.
+        options.pop("export_formats", None)
+        options.pop("export_selection", None)
         if args.run_state is not None:
             options["idempotency"] = IdempotencyOptions(
                 state_path=args.run_state or None,

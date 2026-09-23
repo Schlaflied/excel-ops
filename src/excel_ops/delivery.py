@@ -79,6 +79,7 @@ from .number_formats import (
     policy_manifest,
     resolve_format_policy,
 )
+from .export_formats import ExportFormatError, parse_export_formats
 from .periods import PeriodResult
 from .review import review_record
 from .template_writer import (
@@ -1604,11 +1605,17 @@ def load_delivery_targets(
     inputs = payload.get("inputs")
     if not isinstance(inputs, list) or not inputs:
         raise DeliveryPlanError("configuration must contain a non-empty inputs array")
+    try:
+        export_selection = parse_export_formats(payload)
+    except ExportFormatError as error:
+        raise DeliveryPlanError(str(error)) from error
     options: dict[str, Any] = {
         "inputs": [base / str(item) for item in inputs],
         "staging_dir": base / str(payload.get("staging_dir") or "staging"),
         "delivery_dir": base / str(payload.get("delivery_dir") or "delivery"),
         "confidence_threshold": float(payload.get("confidence_threshold", 0.85)),
+        "export_formats": export_selection.formats,
+        "export_selection": export_selection.to_dict(),
     }
     if payload.get("recipe"):
         options["recipe_path"] = base / str(payload["recipe"])
