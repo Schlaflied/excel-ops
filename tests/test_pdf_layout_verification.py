@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from excel_ops.pdf_layout_verification import verify_pdf_layout
+from excel_ops.pdf_layout_verification import MAX_CONTENT_STREAM_BYTES, verify_pdf_layout
 
 
 class _Box:
@@ -13,8 +13,14 @@ class _Box:
 class _Page:
     mediabox = _Box()
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, *, content_size: int = 0):
         self._text = text
+        self._content_size = content_size
+
+    def get_contents(self):
+        size = self._content_size
+        data = type("Data", (), {"__len__": lambda self: size})()
+        return type("Contents", (), {"get_data": lambda self: data})()
 
     def extract_text(self) -> str:
         return self._text
@@ -149,4 +155,25 @@ def test_boundary_tokens_ignore_formula_and_number_cells(tmp_path, monkeypatch):
 
     result = verify_pdf_layout(source, tmp_path / "report.pdf", sheets=["Report"])
 
-    assert result.passed is True
+    assert result.passed is False
+    assert {item.code for item in result.findings} == {
+        "boundary_content_unverifiable"
+    }
+
+
+def test_oversized_content_stream_is_not_extracted(tmp_path, monkeypatch):
+    source = tmp_path / "report.xlsx"
+    _source(source)
+    page = _Page("Header Boundary", content_size=MAX_CONTENT_STREAM_BYTES + 1)
+    monkeypatch.setattr(
+        "excel_ops.pdf_layout_verification.PdfReader",
+        lambda path: type("Reader", (), {"pages": [page]})(),
+    )
+
+    result = verify_pdf_layout(source, tmp_path / "report.pdf", sheets=["Report"])
+
+    assert result.passed is False
+    assert {item.code for item in result.findings} == {
+        "content_stream_too_large",
+        "boundary_content_missing",
+    }

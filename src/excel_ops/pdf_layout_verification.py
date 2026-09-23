@@ -11,6 +11,9 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 
 
+MAX_CONTENT_STREAM_BYTES = 50 * 1024 * 1024
+
+
 @dataclass(frozen=True)
 class PdfLayoutFinding:
     """One machine-readable reason a PDF layout could not be verified."""
@@ -85,6 +88,18 @@ def verify_pdf_layout(
                     )
                 )
         try:
+            contents = page.get_contents()
+            content_size = len(contents.get_data()) if contents is not None else 0
+            if content_size > MAX_CONTENT_STREAM_BYTES:
+                findings.append(
+                    PdfLayoutFinding(
+                        "content_stream_too_large",
+                        "The page content stream exceeds the safe text-extraction budget.",
+                        page=index,
+                    )
+                )
+                page_text.append("")
+                continue
             text = page.extract_text() or ""
         except Exception as error:
             findings.append(
@@ -127,7 +142,16 @@ def verify_pdf_layout(
                         sheet=sheet_name,
                     )
                 )
-            for token in _boundary_tokens(worksheet):
+            boundary_tokens, boundary_unverifiable = _boundary_tokens(worksheet)
+            if boundary_unverifiable:
+                findings.append(
+                    PdfLayoutFinding(
+                        "boundary_content_unverifiable",
+                        "A printable boundary cell is not literal text and cannot be matched safely.",
+                        sheet=sheet_name,
+                    )
+                )
+            for token in boundary_tokens:
                 if token not in rendered_text:
                     findings.append(
                         PdfLayoutFinding(
@@ -166,29 +190,31 @@ def _has_safe_scaling(worksheet) -> bool:
     return True
 
 
-def _boundary_tokens(worksheet) -> tuple[str, ...]:
-    """Return non-sensitive normalized strings from the printable data edges."""
+def _boundary_tokens(worksheet) -> tuple[tuple[str, ...], bool]:
+    """Return literal edge tokens and whether a non-text edge is unverifiable."""
 
-    first: str | None = None
-    last: str | None = None
+    first = None
+    last = None
     for row in worksheet.iter_rows():
-        populated = [
-            cell.value
-            for cell in row
-            if cell.data_type in {"s", "inlineStr"} and cell.value not in (None, "")
-        ]
+        populated = [cell for cell in row if cell.value not in (None, "")]
         if populated:
-            first = first or str(populated[0])
-            last = str(populated[-1])
-    return tuple(
+            first = first or populated[0]
+            last = populated[-1]
+    edges = (first, last)
+    tokens = tuple(
         dict.fromkeys(
             token
-            for value in (first, last)
-            if value is not None
-            for token in (_normalize(value),)
+            for cell in edges
+            if cell is not None and cell.data_type in {"s", "inlineStr"}
+            for token in (_normalize(str(cell.value)),)
             if len(token) >= 3
         )
     )
+    unverifiable = any(
+        cell is not None and cell.data_type not in {"s", "inlineStr"}
+        for cell in edges
+    )
+    return tokens, unverifiable
 
 
 def _normalize(value: str) -> str:
