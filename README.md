@@ -145,7 +145,7 @@ Merged modules, repository tests, and a verified persisted file are separate kin
 
 [See the complete capability ledger, implementation status, safety boundaries, and linked issues/PRs](docs/capabilities.md).
 
-Still out of scope on `main`: full cross-run idempotency fingerprinting ([#19](https://github.com/Schlaflied/excel-ops/issues/19)), currency and precision rules ([#23](https://github.com/Schlaflied/excel-ops/issues/23)), multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)), and every cloud connector.
+Still out of scope on `main`: multi-format export ([#22](https://github.com/Schlaflied/excel-ops/issues/22)) and every cloud connector. Semantic currency and precision rules are documented in [the number-format policy guide](docs/number-format-policy.md).
 
 ## License
 

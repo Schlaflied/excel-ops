@@ -67,8 +67,18 @@ from .matching import Destination, MatchCandidate, MatchResult, preallocate_reco
 from .period_refresh import DateRole, DateSlot, RefreshChange, RefreshResult, SlotTarget, refresh_workbook_period
 from .periods import AmbiguousPeriodError, PeriodResolutionError, PeriodResult, resolve_period
 from .naming import ResolvedOutput, resolve_output_path, verify_output_name
+from .number_formats import (
+    FieldFormatPolicy,
+    FormatPolicy,
+    NumberFormatPolicyError,
+    ResolvedFieldFormat,
+    build_number_format,
+    policy_manifest,
+    resolve_format_policy,
+)
 from .template_writer import (
     TemplateChange,
+    TemplateFormatChange,
     TemplateMapping,
     TemplateSkip,
     TemplateWriteError,
@@ -155,7 +165,12 @@ __all__ = [
     "RefreshResult",
     "SlotTarget",
     "ResolvedOutput",
+    "FieldFormatPolicy",
+    "FormatPolicy",
+    "NumberFormatPolicyError",
+    "ResolvedFieldFormat",
     "TemplateChange",
+    "TemplateFormatChange",
     "TemplateMapping",
     "TemplateSkip",
     "TemplateWriteError",
@@ -174,6 +189,9 @@ __all__ = [
     "review_rows_from_match_results",
     "review_rows_from_ambiguities",
     "resolve_output_path",
+    "build_number_format",
+    "policy_manifest",
+    "resolve_format_policy",
     "run_pipeline",
     "save_project_recipe",
     "stable_record_id",

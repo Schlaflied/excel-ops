@@ -136,7 +136,14 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Safety boundary:** no cell value, record ID, or verification finding message is ever copied in — only file names, content hashes, sheet names, declared field names, and integer counts; a Manifest is generated only for a target that actually delivered a file, never for a plan, a dry run, or a failed verification; a disagreement between the run's counters and the real file is reported as a named discrepancy instead of being smoothed over.
 - **Implementation:** [Issue #20](https://github.com/Schlaflied/excel-ops/issues/20) / [Detailed guide](delivery-manifest.md)
 
-### 17. Local Agent MCP server
+### 17. Semantic number formats, currency, and precision
+
+- **What it does:** resolves workbook defaults and field-level overrides for amounts, exchange rates, hours, headcount, percentages, and tax rates; supports CAD, USD, CNY, and EUR plus standard, red, parentheses, and accounting negative displays.
+- **Output and evidence:** applies formats during template write-back, reopens the saved workbook to verify values and formats, and records the resolved currency, display/storage/calculation precision, rounding declaration, and negative style in the change log and delivery Manifest.
+- **Safety boundary:** display formatting never rounds or replaces stored values; bare ambiguous symbols and mixed or conflicting currencies block the plan as format-policy ambiguities; fields outside the policy retain the enterprise template's style.
+- **Implementation:** [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) / [Detailed guide](number-format-policy.md)
+
+### 18. Local Agent MCP server
 
 - **What it does:** exposes `excel_ops.scan_workdir`, `excel_ops.plan_delivery`, and `excel_ops.run_delivery` as discoverable MCP tools over local stdio, with versioned structured results and the existing Python CLI as the only execution backend.
 - **Output and evidence:** MCP input/output schemas, tool annotations, structured environment/business failure categories, direct-CLI semantic parity tests, and an in-memory protocol test covering real `tools/list` and `tools/call` requests.
@@ -158,7 +165,7 @@ This loop is exercised end to end against synthetic fixtures and judged by the r
 ## Not implemented or not yet complete end to end
 
 - cloud-target revision conflict handling for [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19). Run-level fingerprinting and the no-op short-circuit are implemented (capability 15), but the revision conflict check is only a forward-compatible interface until a real cloud connector exists;
-- [Issue #23](https://github.com/Schlaflied/excel-ops/issues/23) currency and precision rules, and [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
+- [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) multi-format export;
 - recalculated-formula proof, which requires Excel or LibreOffice rather than openpyxl;
 - local sync folders and Google Sheets, Dropbox, Feishu, and WPS connectors;
 - prompt-driven append, join, multi-tab delivery grouping, summaries, and pivot tables;

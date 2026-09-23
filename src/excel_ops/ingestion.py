@@ -26,6 +26,8 @@ FIELD_ALIASES = {
     "identifier": {"identifier", "id", "asset id", "record id", "code"},
     "category": {"category", "type", "inspection type", "event type"},
     "confidence": {"confidence", "score"},
+    "amount": {"amount", "gross pay", "pay", "price", "cost", "total"},
+    "currency": {"currency", "currency code", "iso currency"},
 }
 REQUIRED_FIELDS = ("location", "event_date", "identifier", "category")
 
@@ -100,6 +102,8 @@ def _records_from_rows(
             "identifier": values.get("identifier"),
             "category": values.get("category"),
             "confidence": confidence,
+            "amount": values.get("amount"),
+            "currency": values.get("currency"),
             "source_file": source_file,
             "source_sheet": source_sheet,
             "source_row": row_index,
