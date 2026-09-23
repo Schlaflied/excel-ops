@@ -47,7 +47,7 @@
     "pyproject.toml": "c1dd170a6f6c353eb8ae5ce208f5154153e18a6f9a4d934d573537ecbd9a65a1",
     "refresh.mjs": "15be4ab85c4197371e78e3d43c9e8b23cafbe52159179f569c87d28958b57835",
     "scripts/update-refresh-manifest.mjs": "248616dd622f0771664bd77c45628de049234bde451fd2f4f3abebfc6e58e2f1",
-    "src/excel_ops/__init__.py": "c96885ff16b435a585fcd5c540ad357fd6a1e0a9ec40736356f4949e5dea9bd2",
+    "src/excel_ops/__init__.py": "5cf4ea142b011b3331cb217def2d164fa518cf55b86459b7f430bdddf425b48c",
     "src/excel_ops/ambiguity.py": "52cb3472784e5b738d7489e6a99c1f8b7ba32635b554d4c32d3b1517294d15ec",
     "src/excel_ops/cli.py": "f58228ba2c0a70ed46a0952500585410e96c6e199013b0af1c725aefff41d8b5",
     "src/excel_ops/delivery.py": "24084a1058a05eedb8753de7f647477d6c0d15a059f32b13eec5860aee7c2675",
@@ -70,6 +70,7 @@
     "src/excel_ops/schema_drift.py": "aa9085267d4918a3894a1874c5b0fab0720df20a80d54e7f9e189e3e42064f50",
     "src/excel_ops/template_writer.py": "890e417eb3429d2ccac8786974ccd3140934c79065527312d5ee839327087803",
     "src/excel_ops/workbook.py": "56a8a13e2b9cdc583301610ff12b4d46789320c21fdc06b8bee783b5bba42f67",
+    "src/excel_ops/workbook_export.py": "9ad79c3fd1287658442add1ed937e551f38ed37c94396ba1e4dfc52ec1ea2a7f",
     "src/excel_ops/workdir.py": "54cedfe78b028b953b8a0c3fd7f054e0cc4039b2ce7f892b2061963b2d3ba32f",
     "tests/mcp-cli.integration.test.mjs": "a1c6f60333be153de92143c137cd93d5456c17f6464c54cd81e83e8d4b9dda00",
     "tests/mcp.test.mjs": "ac55933ff902a0739a0889ceafbf148bb5f10a124821bd13a6252087eb393487",
@@ -93,6 +94,7 @@
     "tests/test_review_pack.py": "c0903c16b022c362693a3efc216f13fb95b0b8eaa544fd803898b237e5a986c7",
     "tests/test_schema_drift.py": "c3ff096e4a0f48a69c0475632b57458a6691b52842e02da3dca357ad81980da6",
     "tests/test_template_writer.py": "53c82e94be8a826cae802b56b2baed2777189ecf066a105add5ae116e629e677",
+    "tests/test_workbook_export.py": "6ad3b8d37e3fb14444ffb15ae07736f16a3c2f3734d53cd67d0e0cc6a81318c1",
     "tests/test_workdir.py": "2e6f50671d9936208b7e1fce8f827482bbd3203925cd388b924125f7d73a2532"
   }
 }

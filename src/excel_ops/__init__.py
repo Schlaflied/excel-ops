@@ -40,6 +40,7 @@ from .delivery_manifest import (
     write_delivery_manifest,
     write_delivery_manifests,
 )
+from .workbook_export import WorkbookExportError, export_csv, export_xlsx
 from .idempotency import (
     ConnectorConflict,
     ConnectorTarget,
@@ -258,4 +259,7 @@ __all__ = [
     "override_from_entry",
     "save_workdir_recipe",
     "scan_workdir",
+    "WorkbookExportError",
+    "export_csv",
+    "export_xlsx",
 ]
