@@ -40,6 +40,7 @@ from .delivery_manifest import (
     write_delivery_manifest,
     write_delivery_manifests,
 )
+from .pdf_export import PdfExportError, export_pdf
 from .workbook_export import WorkbookExportError, export_csv, export_xlsx
 from .idempotency import (
     ConnectorConflict,
@@ -262,4 +263,6 @@ __all__ = [
     "WorkbookExportError",
     "export_csv",
     "export_xlsx",
+    "PdfExportError",
+    "export_pdf",
 ]
