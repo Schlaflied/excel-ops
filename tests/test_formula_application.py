@@ -1,7 +1,9 @@
+import datetime as dt
 from pathlib import Path
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from openpyxl.worksheet.formula import ArrayFormula
 
 from excel_ops.formula_application import (
     FormulaApplicationError,
@@ -121,6 +123,29 @@ def test_explicit_overwrite_replaces_existing_formula(tmp_path):
     assert result.skipped == ()
 
 
+def test_array_formula_is_protected_by_default(tmp_path):
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "output.xlsx"
+    _source(source)
+    workbook = load_workbook(source)
+    workbook["Report"]["D3"] = ArrayFormula(ref="D3:D3", text="=C3")
+    workbook.save(source)
+    workbook.close()
+
+    result = apply_formula_plan(
+        source,
+        output,
+        _formula_plan(),
+        sheet="Report",
+        target_range="D2:D4",
+        confirmed=True,
+    )
+
+    assert ("D3", "protected_formula") in [
+        (item.cell, item.reason) for item in result.skipped
+    ]
+
+
 def test_merged_non_anchor_is_skipped(tmp_path):
     source = tmp_path / "source.xlsx"
     output = tmp_path / "output.xlsx"
@@ -158,6 +183,55 @@ def test_static_mode_requires_one_cell(tmp_path):
             sheet="Report",
             target_range="D2:D3",
         )
+
+
+def test_static_mode_rejects_formula_like_text(tmp_path):
+    source = tmp_path / "source.xlsx"
+    _source(source)
+    plan = plan_formula(
+        DateAddFormulaSpec("Use an independently computed value.", "C2", 1),
+        target_excel_version="365",
+        output_mode="static",
+        computed_value="=1+1",
+    )
+
+    with pytest.raises(FormulaApplicationError, match="must not be formula text"):
+        apply_formula_plan(
+            source,
+            tmp_path / "output.xlsx",
+            plan,
+            sheet="Report",
+            target_range="D2",
+            confirmed=True,
+        )
+
+
+def test_static_date_is_normalized_during_read_back_verification(tmp_path):
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "output.xlsx"
+    _source(source)
+    plan = plan_formula(
+        DateAddFormulaSpec("Use the independently approved date.", "C2", 1),
+        target_excel_version="365",
+        output_mode="static",
+        computed_value=dt.date(2026, 2, 1),
+    )
+
+    result = apply_formula_plan(
+        source,
+        output,
+        plan,
+        sheet="Report",
+        target_range="D2",
+        confirmed=True,
+    )
+
+    assert result.verified is True
+    written = load_workbook(output)
+    try:
+        assert written["Report"]["D2"].value == dt.datetime(2026, 2, 1)
+    finally:
+        written.close()
 
 
 def test_write_requires_confirmation_and_new_output(tmp_path):

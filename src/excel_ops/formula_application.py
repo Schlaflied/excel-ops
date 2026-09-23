@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import tempfile
 from dataclasses import asdict, dataclass
@@ -159,9 +160,12 @@ def _application(
                 if is_merged_non_anchor(cell):
                     skipped.append(FormulaSkip(cell.coordinate, "merged_non_anchor"))
                     continue
-                if is_protected_formula_value(
-                    cell.value,
-                    overwrite_formulas=overwrite_formulas,
+                if not overwrite_formulas and (
+                    cell.data_type == "f"
+                    or is_protected_formula_value(
+                        cell.value,
+                        overwrite_formulas=overwrite_formulas,
+                    )
                 ):
                     skipped.append(FormulaSkip(cell.coordinate, "protected_formula"))
                     continue
@@ -197,6 +201,8 @@ def _application(
 
 def _planned_value(plan: FormulaPlan, anchor: str, target: str) -> Any:
     if plan.output_mode == "static":
+        if isinstance(plan.value, str) and plan.value.startswith("="):
+            raise FormulaApplicationError("static mode value must not be formula text")
         return plan.value
     if not isinstance(plan.value, str) or not plan.value.startswith("="):
         raise FormulaApplicationError("formula mode requires a formula value")
@@ -241,10 +247,20 @@ def _verify_written_values(
     workbook = load_workbook(workbook_path, keep_vba=suffix == ".xlsm", data_only=False)
     try:
         worksheet = workbook[sheet]
-        mismatches = [cell for cell, value in expected.items() if worksheet[cell].value != value]
+        mismatches = [
+            cell
+            for cell, value in expected.items()
+            if not _same_value(worksheet[cell].value, value)
+        ]
     finally:
         workbook.close()
     if mismatches:
         raise FormulaApplicationError(
             "written workbook failed read-back verification at " + ", ".join(mismatches)
         )
+
+
+def _same_value(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, dt.date) and not isinstance(expected, dt.datetime):
+        expected = dt.datetime.combine(expected, dt.time())
+    return actual == expected
