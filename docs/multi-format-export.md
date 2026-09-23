@@ -41,7 +41,7 @@ CSV is a flat, single-sheet interchange format. It cannot preserve formulas, sty
 
 ### PDF
 
-PDF is a fixed-layout review and archival artifact, not an editable workbook. The selected sheet scope is explicit (`all` or a named list). The current adapters verify that a PDF file was produced, but report `verification: unverified` and `pdf_layout_not_verified` until page-level pagination, scaling, repeated-header, clipping, and readability checks are implemented.
+PDF is a fixed-layout review and archival artifact, not an editable workbook. The selected sheet scope is explicit (`all` or a named list). After rendering, the verifier parses every page, checks page count and bounds, requires readable text, evaluates workbook scaling and repeated-header configuration, confirms configured headers on every page for a single-sheet PDF, and checks printable boundary text for clipping. Any finding leaves the artifact `unverified` with structured evidence.
 
 ## Pipeline boundary
 
@@ -62,7 +62,7 @@ The delivery Manifest should record an `exports` entry per artifact containing t
 1. Validate and normalize the format-selection contract in the delivery plan.
 2. Add an XLSX pass-through artifact and shared export result/Manifest shape.
 3. Add explicit single-sheet and one-file-per-sheet CSV export with tests.
-4. Add PDF export behind a capability check and page-level verification.
+4. PDF export runs behind a capability check and records page-level verification findings.
 5. CLI/MCP exposure, examples, and end-to-end tests are integrated through the existing confirmed `run_delivery` tool.
 
 `prepare_delivery` accepts the `delivery` object above. `plan_delivery` returns an `export_plan`; after explicit approval, `run_delivery` writes and verifies XLSX first, creates the selected siblings, and adds an `exports` array to the delivery Manifest. Each entry records actual format, source workbook, included sheets, content digest, verification status, loss warnings, and a renderer summary. See [`examples/multi-format-delivery.json`](../examples/multi-format-delivery.json).

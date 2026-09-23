@@ -25,7 +25,7 @@ delivery:
 
 - **XLSX**：继续保留多 Sheet、公式、样式、图片、条件格式和可编辑结构，并沿用现有写回、读回验证、命名、幂等和 Manifest 契约。
 - **CSV**：只表示单张扁平表，不能保留公式、样式、合并单元格、图片、图表或其他 Sheet。多 Sheet 时必须明确指定 Sheet 或选择 `one-file-per-sheet`，不得默认取活动 Sheet。
-- **PDF**：是固定版面审阅和归档工件，不是可编辑工作簿。必须明确导出全部 Sheet 或指定 Sheet。当前 adapter 只验证 PDF 文件确实生成；在分页、缩放、重复表头、截断和可读性等页面级检查落地前，Manifest 会如实记录 `verification: unverified` 与 `pdf_layout_not_verified`。
+- **PDF**：是固定版面审阅和归档工件，不是可编辑工作簿。必须明确导出全部 Sheet 或指定 Sheet。渲染后，验证器会解析每一页，检查页数与页面尺寸、文本可读性、工作簿缩放和重复表头配置；单 Sheet PDF 还会确认配置的表头出现在每一页，并检查打印边界文本是否因截断而缺失。任何 finding 都会令工件保持 `unverified`，并写入结构化证据。
 
 ## 流程边界
 
@@ -46,7 +46,7 @@ Manifest 为每个导出工件记录格式、来源工作簿、包含的 Sheet�
 1. 在 delivery plan 中校验并规范化格式选择；
 2. 增加 XLSX 直通工件和共享导出结果/Manifest 结构；
 3. 增加显式单 Sheet 与逐 Sheet CSV 导出及测试；
-4. 在能力检查后增加 PDF 导出和分页验证；
+4. PDF 导出在能力检查后执行，并记录页面级验证 findings；
 5. CLI/MCP 暴露、示例及端到端测试已通过现有、受确认保护的 `run_delivery` 工具接入。
 
 `prepare_delivery` 接受上面的 `delivery` 对象；`plan_delivery` 返回 `export_plan`；用户明确批准后，`run_delivery` 先写入并验证 XLSX，再生成所选格式，并在交付 Manifest 中写入 `exports` 数组。每项包含实际格式、来源工作簿、Sheet 范围、内容摘要、验证状态、能力损失警告和 renderer 摘要。见 [`examples/multi-format-delivery.json`](../examples/multi-format-delivery.json)。
