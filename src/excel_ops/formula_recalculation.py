@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Callable, Literal, Sequence
 
 from openpyxl import load_workbook
+from openpyxl.utils.cell import coordinate_from_string
+from openpyxl.utils.exceptions import CellCoordinatesException
 
 from .delivery_verification import VerificationFinding
 from .formula_verification import FormulaRegion, FormulaVerifier
@@ -86,6 +88,7 @@ def verify_formula_recalculation(
     source = Path(source_path).resolve()
     destination = Path(destination_path).resolve()
     _validate_paths(source, destination)
+    _validate_expectations(expectations)
     static_findings = _static_findings(source, formula_regions)
     if any(item.severity == "error" for item in static_findings):
         return FormulaRecalculationResult("failed", None, None, static_findings)
@@ -139,6 +142,19 @@ def _validate_paths(source: Path, destination: Path) -> None:
         raise FormulaRecalculationError("recalculated workbook must end in .xlsx")
     if destination.exists():
         raise FormulaRecalculationError("recalculated workbook already exists")
+
+
+def _validate_expectations(
+    expectations: Sequence[FormulaValueExpectation],
+) -> None:
+    for expectation in expectations:
+        try:
+            coordinate_from_string(expectation.cell)
+        except (CellCoordinatesException, TypeError, ValueError) as error:
+            raise FormulaRecalculationError(
+                "expectation cell must be a single cell reference: "
+                f"{expectation.cell!r}"
+            ) from error
 
 
 def _static_findings(
@@ -307,6 +323,19 @@ def _recalculate_with_libreoffice(source: Path, destination: Path) -> str:
         output_dir.mkdir()
         prepared = input_dir / "recalculate.xlsx"
         shutil.copy2(source, prepared)
+        profile_user = temporary / "profile" / "user"
+        profile_user.mkdir(parents=True)
+        (profile_user / "registrymodifications.xcu").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<oor:items xmlns:oor="http://openoffice.org/2001/registry" '
+            'xmlns:xs="http://www.w3.org/2001/XMLSchema" '
+            'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
+            '<item oor:path="/org.openoffice.Office.Calc/Formula/Load">'
+            '<prop oor:name="OOXMLRecalcMode" oor:op="fuse">'
+            '<value>0</value></prop></item>\n'
+            '</oor:items>\n',
+            encoding="utf-8",
+        )
         try:
             result = subprocess.run(
                 [

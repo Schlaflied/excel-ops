@@ -1,10 +1,15 @@
+import shutil
+import zipfile
 from decimal import Decimal
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
+import pytest
 from openpyxl import Workbook, load_workbook
 
 from excel_ops.formula_recalculation import (
     FormulaEngineUnavailable,
+    FormulaRecalculationError,
     FormulaValueExpectation,
     verify_formula_recalculation,
 )
@@ -31,6 +36,27 @@ def _calculated(value):
         return "test-engine"
 
     return recalculate
+
+
+def _replace_cached_value(path: Path, *, cell_reference: str, value: str) -> None:
+    replacement = path.with_suffix(".replacement.xlsx")
+    worksheet_path = "xl/worksheets/sheet1.xml"
+    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    with zipfile.ZipFile(path) as source, zipfile.ZipFile(
+        replacement, "w"
+    ) as destination:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == worksheet_path:
+                root = ET.fromstring(data)
+                cell = root.find(f".//{namespace}c[@r='{cell_reference}']")
+                assert cell is not None
+                cached = cell.find(f"{namespace}v")
+                assert cached is not None
+                cached.text = value
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            destination.writestr(item, data)
+    replacement.replace(path)
 
 
 def test_recalculation_verifies_an_independent_expected_value(tmp_path):
@@ -155,6 +181,31 @@ def test_static_formula_failure_blocks_engine_execution(tmp_path):
     assert called is False
 
 
+@pytest.mark.parametrize("cell", ["C2:C3", "not-a-cell"])
+def test_invalid_expectation_cell_is_rejected_before_recalculation(tmp_path, cell):
+    source = tmp_path / "source.xlsx"
+    _source(source)
+    called = False
+
+    def should_not_run(source: Path, destination: Path) -> str:
+        nonlocal called
+        called = True
+        return "test-engine"
+
+    with pytest.raises(
+        FormulaRecalculationError,
+        match="expectation cell must be a single cell reference",
+    ):
+        verify_formula_recalculation(
+            source,
+            tmp_path / "recalculated.xlsx",
+            expectations=(FormulaValueExpectation("Report", cell, 5),),
+            recalculator=should_not_run,
+        )
+
+    assert called is False
+
+
 def test_missing_expectations_are_unverified(tmp_path):
     source = tmp_path / "source.xlsx"
     _source(source)
@@ -211,3 +262,27 @@ def test_circular_reference_is_detected_before_recalculation(tmp_path):
 
     assert result.status == "failed"
     assert "circular_reference" in {item.code for item in result.findings}
+
+
+def test_libreoffice_replaces_a_stale_cached_formula_value(tmp_path):
+    if shutil.which("soffice") is None:
+        pytest.skip("LibreOffice soffice is not installed")
+
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "recalculated.xlsx"
+    _source(source)
+    _replace_cached_value(source, cell_reference="C2", value="999")
+
+    result = verify_formula_recalculation(
+        source,
+        output,
+        expectations=(FormulaValueExpectation("Report", "C2", 5),),
+        engine="libreoffice",
+    )
+
+    assert result.status == "verified"
+    workbook = load_workbook(output, data_only=True)
+    try:
+        assert workbook["Report"]["C2"].value == 5
+    finally:
+        workbook.close()
