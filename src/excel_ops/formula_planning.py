@@ -118,7 +118,8 @@ def _formula(spec: FormulaSpec, version: ExcelVersion) -> tuple[str, str, str]:
         lookup_cell = _cell(spec.lookup_cell, "lookup_cell")
         lookup_range = _range(spec.lookup_range, "lookup_range")
         return_range = _range(spec.return_range, "return_range")
-        _require_lookup_shape(lookup_range, return_range)
+        _require_lookup_shape(lookup_range, return_range, version)
+        lookup_rows, _ = _shape(lookup_range)
         sheet = _sheet(spec.source_sheet)
         if version in {"2021", "365"}:
             return (
@@ -126,8 +127,14 @@ def _formula(spec: FormulaSpec, version: ExcelVersion) -> tuple[str, str, str]:
                 "XLOOKUP",
                 "XLOOKUP is available in the selected Excel version",
             )
+        match = f"MATCH({lookup_cell},{sheet}!{lookup_range},0)"
+        index = (
+            f"INDEX({sheet}!{return_range},0,{match})"
+            if lookup_rows == 1
+            else f"INDEX({sheet}!{return_range},{match})"
+        )
         return (
-            f'=IFNA(INDEX({sheet}!{return_range},MATCH({lookup_cell},{sheet}!{lookup_range},0)),"")',
+            f'=IFNA({index},"")',
             "INDEX/MATCH",
             "INDEX/MATCH fallback avoids XLOOKUP on legacy Excel",
         )
@@ -205,7 +212,11 @@ def _require_same_shape(first: str, second: str, fields: str) -> None:
         raise FormulaPlanError(f"{fields} must have the same dimensions")
 
 
-def _require_lookup_shape(lookup_range: str, return_range: str) -> None:
+def _require_lookup_shape(
+    lookup_range: str,
+    return_range: str,
+    version: ExcelVersion,
+) -> None:
     lookup_rows, lookup_columns = _shape(lookup_range)
     return_rows, return_columns = _shape(return_range)
     if lookup_rows != 1 and lookup_columns != 1:
@@ -217,6 +228,13 @@ def _require_lookup_shape(lookup_range: str, return_range: str) -> None:
     if lookup_columns == 1 and return_rows != lookup_rows:
         raise FormulaPlanError(
             "lookup_range and return_range must have the same number of rows"
+        )
+    if version in {"2016", "2019"} and (
+        (lookup_rows == 1 and return_rows != 1)
+        or (lookup_columns == 1 and return_columns != 1)
+    ):
+        raise FormulaPlanError(
+            "legacy lookup return_range must have one row or one column"
         )
 
 

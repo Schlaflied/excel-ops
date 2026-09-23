@@ -72,6 +72,31 @@ def test_horizontal_lookup_allows_multiple_return_rows():
     assert plan.function == "XLOOKUP"
 
 
+def test_legacy_horizontal_lookup_uses_match_as_index_column():
+    plan = plan_formula(
+        LookupFormulaSpec("Find a month.", "A2", "Data", "B1:M1", "B2:M2"),
+        target_excel_version="2019",
+    )
+
+    assert plan.value == (
+        "=IFNA(INDEX('Data'!B2:M2,0,MATCH(A2,'Data'!B1:M1,0)),\"\")"
+    )
+
+
+@pytest.mark.parametrize(
+    ("lookup_range", "return_range"),
+    [("A2:A10", "C2:D10"), ("B1:M1", "B2:M4")],
+)
+def test_legacy_lookup_rejects_multi_cell_returns(lookup_range, return_range):
+    with pytest.raises(FormulaPlanError, match="legacy lookup return_range"):
+        plan_formula(
+            LookupFormulaSpec(
+                "Find a value.", "A2", "Data", lookup_range, return_range
+            ),
+            target_excel_version="2019",
+        )
+
+
 @pytest.mark.parametrize(
     ("lookup_range", "return_range", "message"),
     [
