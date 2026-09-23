@@ -69,7 +69,7 @@ def test_recalculation_verifies_an_independent_expected_value(tmp_path):
         output,
         expectations=(FormulaValueExpectation("Report", "C2", 5),),
         formula_regions=(FormulaRegion("Report", "C2:C2"),),
-        recalculator=_calculated(5),
+        recalculator=_formula_preserving_calculated(5),
     )
 
     assert result.status == "verified"
@@ -77,6 +77,71 @@ def test_recalculation_verifies_an_independent_expected_value(tmp_path):
     assert result.engine == "test-engine"
     assert result.recalculated_path == output.resolve()
     assert output.exists()
+    workbook = load_workbook(output, data_only=False)
+    try:
+        assert workbook["Report"]["C2"].value == "=SUM(A2:B2)"
+    finally:
+        workbook.close()
+
+
+def _formula_preserving_calculated(value):
+    def recalculate(source: Path, destination: Path) -> str:
+        shutil.copy2(source, destination)
+        _replace_cached_value(destination, cell_reference="C2", value=str(value))
+        return "test-engine"
+
+    return recalculate
+
+
+def test_recalculation_rejects_an_engine_that_removes_the_formula(tmp_path):
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "recalculated.xlsx"
+    _source(source)
+
+    result = verify_formula_recalculation(
+        source,
+        output,
+        expectations=(FormulaValueExpectation("Report", "C2", 5),),
+        formula_regions=(FormulaRegion("Report", "C2:C2"),),
+        recalculator=_calculated(5),
+    )
+
+    assert result.status == "failed"
+    assert "recalculated_formula_not_preserved" in {
+        item.code for item in result.findings
+    }
+    assert not output.exists()
+
+
+def test_recalculation_rejects_output_that_drops_a_formula_sheet(tmp_path):
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "recalculated.xlsx"
+    _source(source)
+    workbook = load_workbook(source)
+    workbook.create_sheet("Evidence")["A1"] = 7
+    workbook.save(source)
+    workbook.close()
+
+    def drop_formula_sheet(source: Path, destination: Path) -> str:
+        recalculated = load_workbook(source)
+        del recalculated["Report"]
+        recalculated.save(destination)
+        recalculated.close()
+        return "test-engine"
+
+    result = verify_formula_recalculation(
+        source,
+        output,
+        expectations=(FormulaValueExpectation("Evidence", "A1", 7),),
+        formula_regions=(FormulaRegion("Report", "C2:C2"),),
+        recalculator=drop_formula_sheet,
+    )
+
+    assert result.status == "failed"
+    assert "recalculated_formula_sheet_missing" in {
+        item.code for item in result.findings
+    }
+    assert not output.exists()
 
 
 def test_recalculation_uses_numeric_tolerance(tmp_path):

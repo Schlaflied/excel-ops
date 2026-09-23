@@ -133,6 +133,12 @@ from .formula_recalculation import (
     FormulaValueExpectation,
     verify_formula_recalculation,
 )
+from .formula_delivery import (
+    FormulaDeliveryError,
+    FormulaDeliveryRule,
+    apply_formula_delivery,
+    formula_rule_from_mapping,
+)
 from .pipeline import run_pipeline
 from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .workdir import (
@@ -261,6 +267,10 @@ __all__ = [
     "FormulaRecalculationResult",
     "FormulaValueExpectation",
     "verify_formula_recalculation",
+    "FormulaDeliveryError",
+    "FormulaDeliveryRule",
+    "apply_formula_delivery",
+    "formula_rule_from_mapping",
     "verify_output_name",
     "ClassificationOverride",
     "DuplicateGroup",

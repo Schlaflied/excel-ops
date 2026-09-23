@@ -16,4 +16,10 @@ Formula mode returns formula text and marks the plan as requiring independent re
 
 `verify_formula_recalculation(...)` first runs the existing #11 static checks for broken references, missing sheets, invalid ranges, error tokens, declared fill gaps, and circular references. It then recalculates a staged copy with Microsoft Excel on Windows when available, otherwise with LibreOffice, and compares the engine-produced cached values against explicit independently derived expectations with optional numeric tolerances. The verified copy is published only when all checks pass.
 
-No installed engine produces `recalculation_not_verified`; omitted expectations produce `recalculation_expectations_missing`. Both remain `unverified`, never `verified`. A formula error or expectation mismatch is `failed` and the staged output is discarded. Integration with the #19 idempotency record remains the final follow-up slice of #25.
+No installed engine produces `recalculation_not_verified`; omitted expectations produce `recalculation_expectations_missing`. Both remain `unverified`, never `verified`. A formula error or expectation mismatch is `failed` and the staged output is discarded.
+
+## Delivery and Agent integration
+
+A delivery target may now declare `formulas`. Each rule contains the serialized typed plan, an explicit sheet and target range, independently derived expectations for formula mode, overwrite policy, and calculation engine. `run_delivery(...)` applies those rules only to the staged copy, fails closed on skipped cells or unverified recalculation, and then runs the ordinary persisted-workbook verification.
+
+The rule identity is part of #19's mapping fingerprint, so changing the business rule, Excel version, output mode, target range, overwrite policy, or expectation scope invalidates a previous no-op baseline. The delivery Manifest records the business rule, compatibility strategy, written range, engine, and verification status without copying expected cell values. The same fields pass through `excel_ops.prepare_delivery`, so the existing MCP sequence can plan and execute formula delivery without invoking separate scripts.

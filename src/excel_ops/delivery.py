@@ -55,6 +55,13 @@ from .delivery_verification import (
     verify_and_deliver,
 )
 from .formula_verification import FormulaVerifier
+from .formula_delivery import (
+    FormulaDeliveryError,
+    FormulaDeliveryRule,
+    apply_formula_delivery,
+    formula_contract_fingerprint,
+    formula_rule_from_mapping,
+)
 from .idempotency import (
     CHANGED,
     FAILED,
@@ -137,6 +144,7 @@ class DeliveryTarget:
     period_expectations: tuple[PeriodExpectation, ...] = field(default_factory=tuple)
     formula_verifier: FormulaVerifier | None = None
     delivery_name: str | None = None
+    formula_rules: tuple[FormulaDeliveryRule, ...] = field(default_factory=tuple)
 
     @property
     def key(self) -> str:
@@ -239,6 +247,7 @@ class PlannedTarget:
     expected_skipped_protected: int = 0
     protected_cells: tuple[str, ...] = field(default_factory=tuple)
     blocking_items: tuple[str, ...] = field(default_factory=tuple)
+    formula_rules: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -254,6 +263,7 @@ class PlannedTarget:
             "expected_skipped_protected": self.expected_skipped_protected,
             "protected_cells": list(self.protected_cells),
             "blocking_items": list(self.blocking_items),
+            "formula_rules": [dict(item) for item in self.formula_rules],
         }
 
 
@@ -319,6 +329,7 @@ class TargetOutcome:
     findings: tuple[VerificationFinding, ...] = field(default_factory=tuple)
     status: str = "planned"
     format_policy: Mapping[str, Any] = field(default_factory=dict)
+    formula_evidence: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -335,6 +346,7 @@ class TargetOutcome:
             "skipped_writes": [dict(item) for item in self.skipped_writes],
             "findings": [asdict(item) for item in self.findings],
             "format_policy": dict(self.format_policy),
+            "formula_evidence": dict(self.formula_evidence),
         }
 
 
@@ -778,6 +790,9 @@ def _mapping_payload(targets: Sequence[DeliveryTarget]) -> list[dict[str, Any]]:
             "format_policy": policy_manifest(target.mapping.format_policy),
             "record_id_field": target.record_id_field,
             "required_fields": sorted(target.required_fields),
+            "formula_rules": [
+                rule.fingerprint_payload() for rule in target.formula_rules
+            ],
         }
         for target in sorted(targets, key=lambda item: item.key)
     ]
@@ -1415,6 +1430,9 @@ def _build_plan(
                 expected_skipped_protected=protected_rows,
                 protected_cells=protected_cells,
                 blocking_items=tuple(blockers),
+                formula_rules=tuple(
+                    rule.manifest_payload() for rule in target.formula_rules
+                ),
             )
         )
     unresolved = (*batch.unresolved_blockers, *format_ambiguities)
@@ -1497,6 +1515,51 @@ def _write_and_verify(
         accepted = [outcomes[index] for index in positions]
         withheld = planned.expected_review
         if not accepted:
+            if target.formula_rules:
+                existing_manifest = read_delivery_manifest(planned.delivery_path)
+                expected_contract = formula_contract_fingerprint(target.formula_rules)
+                if (
+                    existing_manifest is not None
+                    and existing_manifest.verification.passed
+                    and existing_manifest.reconciled
+                    and existing_manifest.formulas.get("status") == "verified"
+                    and existing_manifest.formulas.get("contract_fingerprint")
+                    == expected_contract
+                ):
+                    target_outcomes.append(
+                        TargetOutcome(
+                            target.key,
+                            planned.template_path,
+                            False,
+                            delivery_path=planned.delivery_path,
+                            status="no_new_records",
+                            formula_evidence=dict(existing_manifest.formulas),
+                        )
+                    )
+                    continue
+                failures.append(
+                    DeliveryFailure(
+                        "formula_delivery_requires_records",
+                        f"{target.key}: formula rules changed, but no new records were accepted for a staged delivery.",
+                        "Provide a new delivery input, or migrate the existing workbook in a separate reviewed operation.",
+                        target.key,
+                    )
+                )
+                target_outcomes.append(
+                    TargetOutcome(
+                        target.key,
+                        planned.template_path,
+                        False,
+                        delivery_path=(
+                            planned.delivery_path
+                            if Path(planned.delivery_path).is_file()
+                            else None
+                        ),
+                        status="formula_delivery_failed",
+                        formula_evidence={"status": "failed"},
+                    )
+                )
+                continue
             target_outcomes.append(
                 TargetOutcome(
                     target.key,
@@ -1558,6 +1621,33 @@ def _write_and_verify(
             )
             continue
 
+        formula_evidence: Mapping[str, Any] = {}
+        if target.formula_rules:
+            try:
+                formula_evidence = apply_formula_delivery(staged, target.formula_rules)
+            except FormulaDeliveryError as error:
+                failures.append(
+                    DeliveryFailure(
+                        "formula_delivery_failed",
+                        f"{target.key}: {error}",
+                        "Review the formula plan, expectations, and calculation engine, then re-run.",
+                        target.key,
+                    )
+                )
+                target_outcomes.append(
+                    TargetOutcome(
+                        target.key,
+                        planned.template_path,
+                        False,
+                        str(staged),
+                        None,
+                        str(write_result.change_log_path),
+                        status="formula_delivery_failed",
+                        formula_evidence={"status": "failed"},
+                    )
+                )
+                continue
+
         if post_stage_hook is not None:
             post_stage_hook(staged)
 
@@ -1612,6 +1702,7 @@ def _write_and_verify(
                 verification.findings,
                 "delivered",
                 write_result.format_policy,
+                formula_evidence,
             )
         )
 
@@ -1692,6 +1783,19 @@ def load_delivery_targets(
             for item in raw.get("period_expectations", ())
             if isinstance(item, Mapping)
         )
+        raw_formulas = raw.get("formulas", ())
+        if not isinstance(raw_formulas, (list, tuple)):
+            raise DeliveryPlanError(f"target {key} formulas must be an array")
+        try:
+            formula_rules = tuple(
+                formula_rule_from_mapping(item)
+                for item in raw_formulas
+                if isinstance(item, Mapping)
+            )
+        except FormulaDeliveryError as error:
+            raise DeliveryPlanError(f"target {key} formulas: {error}") from error
+        if len(formula_rules) != len(raw_formulas):
+            raise DeliveryPlanError(f"target {key} formulas must contain objects")
         targets.append(
             DeliveryTarget(
                 destination=Destination(key, tuple(str(item) for item in raw.get("aliases", ()))),
@@ -1701,6 +1805,7 @@ def load_delivery_targets(
                 record_id_field=str(raw.get("record_id_field", "record_id")),
                 period_expectations=expectations,
                 delivery_name=raw.get("delivery_name"),
+                formula_rules=formula_rules,
             )
         )
     inputs = payload.get("inputs")

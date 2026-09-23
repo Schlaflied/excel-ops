@@ -71,6 +71,7 @@ def prepare_delivery_plan(request: Mapping[str, Any]) -> dict[str, Any]:
             ("periodExpectations", "period_expectations"),
             ("deliveryName", "delivery_name"),
             ("formatPolicy", "format_policy"),
+            ("formulas", "formulas"),
         ):
             if source in raw and raw[source] is not None:
                 target[destination] = raw[source]
@@ -193,7 +194,7 @@ def _validate_request_shape(request: Mapping[str, Any]) -> None:
             raise PlanPreparationError(
                 "invalid_request", f"targets[{index}].fieldColumns must be an object"
             )
-        for field in ("aliases", "requiredFields", "periodExpectations"):
+        for field in ("aliases", "requiredFields", "periodExpectations", "formulas"):
             if field in target and not isinstance(target[field], list):
                 raise PlanPreparationError(
                     "invalid_request", f"targets[{index}].{field} must be an array"
@@ -226,6 +227,12 @@ def _validate_request_shape(request: Mapping[str, Any]) -> None:
                 raise PlanPreparationError(
                     "invalid_request",
                     f"targets[{index}].periodExpectations[{expectation_index}] must be an object",
+                )
+        for formula_index, formula in enumerate(target.get("formulas", [])):
+            if not isinstance(formula, Mapping):
+                raise PlanPreparationError(
+                    "invalid_request",
+                    f"targets[{index}].formulas[{formula_index}] must be an object",
                 )
 
 

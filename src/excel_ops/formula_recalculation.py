@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal, Sequence
 
 from openpyxl import load_workbook
-from openpyxl.utils.cell import coordinate_from_string
+from openpyxl.utils.cell import coordinate_from_string, range_boundaries
 from openpyxl.utils.exceptions import CellCoordinatesException
 
 from .delivery_verification import VerificationFinding
@@ -111,7 +111,11 @@ def verify_formula_recalculation(
             raise FormulaRecalculationError(
                 f"{used_engine} reported success without producing a workbook"
             )
-        findings = [*static_findings, *_verify_values(staged, expectations)]
+        findings = [
+            *static_findings,
+            *_verify_formula_preservation(source, staged, formula_regions),
+            *_verify_values(staged, expectations),
+        ]
         if any(item.severity == "error" for item in findings):
             return FormulaRecalculationResult("failed", used_engine, None, tuple(findings))
         os.replace(staged, destination)
@@ -212,6 +216,58 @@ def _verify_values(
                 )
     finally:
         workbook.close()
+    return tuple(findings)
+
+
+def _verify_formula_preservation(
+    source: Path,
+    recalculated: Path,
+    regions: Sequence[FormulaRegion],
+) -> tuple[VerificationFinding, ...]:
+    """Reject an engine output that replaces a declared formula with a value."""
+
+    if not regions:
+        return ()
+    before = load_workbook(source, data_only=False)
+    after = load_workbook(recalculated, data_only=False)
+    findings: list[VerificationFinding] = []
+    try:
+        for region in regions:
+            if region.sheet not in before.sheetnames:
+                continue
+            if region.sheet not in after.sheetnames:
+                findings.append(
+                    VerificationFinding(
+                        "recalculated_formula_sheet_missing",
+                        "The recalculation output omitted a declared formula sheet.",
+                        "Restore the formula sheet and rerun recalculation.",
+                        sheet=region.sheet,
+                    )
+                )
+                continue
+            min_col, min_row, max_col, max_row = range_boundaries(region.cell_range)
+            source_sheet = before[region.sheet]
+            output_sheet = after[region.sheet]
+            for row in range(min_row, max_row + 1):
+                for column in range(min_col, max_col + 1):
+                    expected = source_sheet.cell(row, column).value
+                    if not isinstance(expected, str) or not expected.startswith("="):
+                        continue
+                    cell = output_sheet.cell(row, column)
+                    if cell.value != expected:
+                        findings.append(
+                            VerificationFinding(
+                                "recalculated_formula_not_preserved",
+                                "The recalculation output did not preserve the requested formula.",
+                                "Use a calculation engine that preserves formula text and updates its cached value.",
+                                sheet=region.sheet,
+                                row=row,
+                                cell=cell.coordinate,
+                            )
+                        )
+    finally:
+        before.close()
+        after.close()
     return tuple(findings)
 
 

@@ -43,6 +43,8 @@ node mcp/server.mjs
 
 推荐的 Agent 顺序是 `scan_workdir → prepare_delivery → plan_delivery → 用户明确确认 → run_delivery`。准备工具接收结构化意图而不是自然语言：由 Host Agent 选择输入并提供目标模板、sheet 与字段映射。缺少业务决定时返回 `needs_review`，不会写出可执行计划。所有路径必须留在明确授权的根目录中；默认拒绝覆盖已有计划，替换时必须提供当前 SHA-256 摘要。
 
+目标还可以包含由用户业务目标生成的类型化 `formulas`。公式模式必须提供明确的独立期望值；dry run 会展示规则和目标范围，获批后的正式运行只修改暂存工作簿，使用 Excel 或 LibreOffice 复算，并把公式证据写入交付 Manifest。公式规则同时参与幂等指纹。
+
 `run_delivery` 强制要求 `confirmed: true`。调用方只有在展示 dry-run 计划并获得用户明确授权后才能设置它。MCP annotation 可以帮助 Host 展示风险区别，服务端还会独立验证确认字段。
 
 每个工具都返回 `excel-ops-agent-v1` 信封：

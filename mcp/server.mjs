@@ -113,6 +113,36 @@ export function createExcelOpsServer(options = {}) {
               periodExpectations: z.array(z.record(z.string(), z.unknown())).optional(),
               deliveryName: z.string().optional(),
               formatPolicy: z.record(z.string(), z.unknown()).optional(),
+              formulas: z
+                .array(
+                  z.object({
+                    plan: z.object({
+                      business_rule: z.string().min(1),
+                      operation: z.string().min(1),
+                      output_mode: z.enum(["formula", "static"]),
+                      target_excel_version: z.enum(["2016", "2019", "2021", "365"]),
+                      value: z.unknown(),
+                      function: z.string().nullable(),
+                      compatibility_strategy: z.string().min(1),
+                      requires_independent_recalculation: z.boolean(),
+                    }),
+                    sheet: z.string().min(1),
+                    target_range: z.string().min(1),
+                    expectations: z
+                      .array(
+                        z.object({
+                          sheet: z.string().min(1),
+                          cell: z.string().min(1),
+                          expected: z.unknown(),
+                          tolerance: z.union([z.string(), z.number()]).optional(),
+                        }),
+                      )
+                      .default([]),
+                    overwrite_formulas: z.boolean().default(false),
+                    engine: z.enum(["auto", "excel", "libreoffice"]).default("auto"),
+                  }),
+                )
+                .optional(),
             }),
           )
           .default([]),

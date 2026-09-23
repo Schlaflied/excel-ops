@@ -195,6 +195,8 @@ class DeliveryManifest:
     format_policy: Mapping[str, Any] = field(default_factory=dict)
     #: Multi-format siblings generated from this verified workbook.
     exports: tuple[Mapping[str, Any], ...] = ()
+    #: Formula policy and independent recalculation evidence; never expected values.
+    formulas: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def accepted(self) -> int:
@@ -256,6 +258,7 @@ class DeliveryManifest:
             "discrepancies": list(self.discrepancies),
             "run_fingerprint": self.run_fingerprint,
             "exports": [dict(item) for item in self.exports],
+            "formulas": dict(self.formulas),
         }
 
     def to_json(self) -> str:
@@ -336,6 +339,7 @@ def read_delivery_manifest(output: str | Path) -> DeliveryManifest | None:
             format=str(payload.get("format", MANIFEST_FORMAT)),
             format_policy=dict(payload.get("format_policy", {})),
             exports=tuple(payload.get("exports", ())),
+            formulas=dict(payload.get("formulas", {})),
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return None
@@ -511,6 +515,7 @@ def _manifest_for(
         discrepancies=discrepancies,
         generated_at=generated_at,
         run_fingerprint=run.fingerprint,
+        formulas=dict(outcome.formula_evidence),
     )
 
 
@@ -784,6 +789,12 @@ def format_manifest(manifest: DeliveryManifest) -> str:
                 f"verification={item.get('verification') or 'unknown'}, "
                 f"summary={item.get('summary') or 'none'}"
             )
+    if manifest.formulas:
+        lines.append(
+            f"  formulas         status={manifest.formulas.get('status')}, "
+            f"engine={manifest.formulas.get('engine') or 'not required'}, "
+            f"rules={len(manifest.formulas.get('rules', ())) }"
+        )
     lines.append(
         "  note             counts, hashes and metadata only; no cell value is recorded here"
     )

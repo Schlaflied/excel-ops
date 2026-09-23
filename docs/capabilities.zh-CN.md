@@ -108,8 +108,8 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 
 ### 13. 集成端到端交付运行
 
-- **能做什么**：`run_delivery(...)` 把导入、数据合同、严格匹配、歧义确认与 Recipe、可检查计划/dry run、staging 模板写回、独立验证和可选公式检查串成一次可由 Agent 调用的运行，并通过 `excel-ops deliver` 暴露。
-- **输出与证据**：一个可 JSON 序列化的结果，包含每条记录的终态、稳定 record ID、每个交付单元格的来源、各目标的实际交付路径、验证 findings 和失败码；由包含两种输入布局、一个图片提取 JSON 和两个模板的合成 fixture 端到端覆盖。
+- **能做什么**：`run_delivery(...)` 把导入、数据合同、严格匹配、歧义确认与 Recipe、可检查计划/dry run、staging 模板写回、类型化公式写入与独立复算、持久化文件验证串成一次可由 Agent 调用的运行，并通过 `excel-ops deliver` 暴露。
+- **输出与证据**：一个可 JSON 序列化的结果，包含每条记录的终态、稳定 record ID、每个交付单元格的来源、各目标的实际交付路径、公式证据、验证 findings 和失败码；公式规则同时进入幂等指纹和交付 Manifest。
 - **安全边界**：保存永不被当作交付——只有重新打开并通过验证的目标才会发布；未解决的歧义、冲突和重复记录不会进入 Accepted；被跳过的已映射单元格会让运行失败关闭，而不是交付半行数据；输入与模板保持不变。
 - **实现**：[Issue #46](https://github.com/Schlaflied/excel-ops/issues/46) / [详细指南](delivery-pipeline.zh-CN.md)
 
@@ -162,11 +162,11 @@ ingest → normalize/type inference → schema check → strict match → ambigu
 
 该闭环已用合成 fixture 端到端跑通，并以重新打开的交付文件为判据。但它仍未进入任何已发布 Release，且只覆盖已声明的本地工作簿模板。
 
-## 尚未实现或尚未形成完整闭环
+## 尚未实现、受条件限制或尚未形成完整闭环
 
 - [Issue #19](https://github.com/Schlaflied/excel-ops/issues/19) 的云端目标 revision 冲突处理。运行级指纹与 no-op 短路已实现（能力 15），但在真正的云端连接器出现之前，revision 冲突检查只是一个向前兼容的接口；
 - [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 多格式导出；
-- 公式重算证据，需要 Excel 或 LibreOffice，openpyxl 无法提供；
+- 公式重算证据已在可用 Excel 或 LibreOffice 引擎时实现；如果公式规则要求独立复算而没有任一引擎，交付会以 `formula_delivery_failed` 失败，而不会交付工作簿；不要求独立复算的静态规则仍可在无引擎时交付，但不提供公式重算证据；
 - 本地云同步目录、Google Sheets、Dropbox、飞书、WPS 等连接器；
 - Prompt 驱动的 append、join、多 Tab delivery grouping、汇总和透视表；
 - 跨来源事实判断与地区法规计算。

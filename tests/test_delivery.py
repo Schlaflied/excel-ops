@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import zipfile
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -33,6 +36,9 @@ from excel_ops.delivery import (
 from excel_ops.delivery_manifest import load_delivery_manifest
 from excel_ops.delivery_verification import PeriodExpectation
 from excel_ops.formula_verification import FormulaRegion, FormulaVerifier
+from excel_ops.formula_delivery import FormulaDeliveryRule, apply_formula_delivery
+from excel_ops.formula_planning import FormulaPlan
+from excel_ops.formula_recalculation import FormulaValueExpectation
 from excel_ops.idempotency import (
     CHANGED,
     FAILED,
@@ -250,9 +256,249 @@ def _assert_originals_untouched(scenario: dict[str, object]) -> None:
         assert path.read_bytes() == content, f"original file changed: {path.name}"
 
 
+def _static_formula_rule(value="approved") -> FormulaDeliveryRule:
+    return FormulaDeliveryRule(
+        FormulaPlan(
+            business_rule="Record the independently approved review marker.",
+            operation="static_marker",
+            output_mode="static",
+            target_excel_version="365",
+            value=value,
+            function=None,
+            compatibility_strategy="static value supplied independently",
+            requires_independent_recalculation=False,
+        ),
+        sheet="北区",
+        target_range="H5",
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Success path
 # --------------------------------------------------------------------------- #
+
+
+def test_run_delivery_applies_formula_rules_and_records_manifest_evidence(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule(),))
+    scenario["targets"] = targets
+
+    result = _run(scenario)
+
+    assert result.delivered is True
+    north = next(item for item in result.targets if item.destination_key == NORTH)
+    workbook = load_workbook(north.delivery_path)
+    try:
+        assert workbook["北区"]["H5"].value == "approved"
+    finally:
+        workbook.close()
+    manifest = next(item for item in result.manifests if item.destination_key == NORTH)
+    assert manifest.formulas["status"] == "verified"
+    assert manifest.formulas["engine"] is None
+    assert manifest.formulas["rules"][0]["business_rule"].startswith("Record")
+    assert "expected" not in json.dumps(manifest.formulas)
+
+
+def test_run_delivery_applies_formula_rules_with_independent_recalculation(
+    tmp_path: Path, monkeypatch
+):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(
+        targets[0],
+        formula_rules=(
+            FormulaDeliveryRule(
+                FormulaPlan(
+                    business_rule="Record the independently calculated marker.",
+                    operation="addition",
+                    output_mode="formula",
+                    target_excel_version="365",
+                    value="=1+1",
+                    function="addition",
+                    compatibility_strategy=(
+                        "basic arithmetic works in all target versions"
+                    ),
+                    requires_independent_recalculation=True,
+                ),
+                "北区",
+                "H5",
+                (FormulaValueExpectation("北区", "H5", 2),),
+            ),
+        ),
+    )
+    scenario["targets"] = targets
+
+    def recalculate(source: Path, destination: Path) -> str:
+        shutil.copy2(source, destination)
+        _replace_cached_formula_value(destination, "H5", "2")
+        return "test-engine"
+
+    def apply_with_test_engine(path, rules):
+        return apply_formula_delivery(path, rules, recalculator=recalculate)
+
+    monkeypatch.setattr(
+        "excel_ops.delivery.apply_formula_delivery",
+        apply_with_test_engine,
+    )
+
+    result = _run(scenario)
+
+    assert result.delivered is True
+    north = next(item for item in result.targets if item.destination_key == NORTH)
+    workbook = load_workbook(north.delivery_path, data_only=False)
+    try:
+        assert workbook["北区"]["H5"].value == "=1+1"
+    finally:
+        workbook.close()
+    manifest = next(item for item in result.manifests if item.destination_key == NORTH)
+    assert manifest.formulas["status"] == "verified"
+    assert manifest.formulas["engine"] == "test-engine"
+
+
+def _replace_cached_formula_value(path: Path, cell_reference: str, value: str) -> None:
+    replacement = path.with_suffix(".replacement.xlsx")
+    worksheet_path = "xl/worksheets/sheet1.xml"
+    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    with zipfile.ZipFile(path) as source, zipfile.ZipFile(
+        replacement, "w"
+    ) as destination:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == worksheet_path:
+                root = ET.fromstring(data)
+                cell = root.find(f".//{namespace}c[@r='{cell_reference}']")
+                assert cell is not None
+                cached = cell.find(f"{namespace}v")
+                assert cached is not None
+                cached.text = value
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            destination.writestr(item, data)
+    replacement.replace(path)
+
+
+def test_run_delivery_rejects_recalculation_that_removes_formula(
+    tmp_path: Path, monkeypatch
+):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(
+        targets[0],
+        formula_rules=(
+            FormulaDeliveryRule(
+                FormulaPlan(
+                    business_rule="Record the independently calculated marker.",
+                    operation="addition",
+                    output_mode="formula",
+                    target_excel_version="365",
+                    value="=1+1",
+                    function="addition",
+                    compatibility_strategy="basic arithmetic",
+                    requires_independent_recalculation=True,
+                ),
+                "北区",
+                "H5",
+                (FormulaValueExpectation("北区", "H5", 2),),
+            ),
+        ),
+    )
+    scenario["targets"] = targets
+
+    def remove_formula(source: Path, destination: Path) -> str:
+        workbook = load_workbook(source)
+        workbook["北区"]["H5"] = 2
+        workbook.save(destination)
+        workbook.close()
+        return "test-engine"
+
+    def apply_with_bad_engine(path, rules):
+        return apply_formula_delivery(path, rules, recalculator=remove_formula)
+
+    monkeypatch.setattr(
+        "excel_ops.delivery.apply_formula_delivery",
+        apply_with_bad_engine,
+    )
+
+    result = _run(scenario)
+
+    assert result.delivered is False
+    north = next(item for item in result.targets if item.destination_key == NORTH)
+    assert north.status == "formula_delivery_failed"
+    assert any(failure.code == "formula_delivery_failed" for failure in result.failures)
+
+
+def test_formula_rules_change_the_idempotency_fingerprint(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("first"),))
+    first = run_delivery(
+        scenario["inputs"],
+        targets,
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+        dry_run=True,
+        idempotency=_idempotent(),
+    )
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("second"),))
+    second = run_delivery(
+        scenario["inputs"],
+        targets,
+        staging_dir=scenario["staging"],
+        delivery_dir=scenario["delivery"],
+        dry_run=True,
+        idempotency=_idempotent(),
+    )
+
+    assert first.fingerprint != second.fingerprint
+    assert first.run_decision.fingerprint.components["mapping"] != (
+        second.run_decision.fingerprint.components["mapping"]
+    )
+
+
+def test_changed_formula_rules_fail_when_no_records_can_be_staged(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("first"),))
+    scenario["targets"] = targets
+
+    first = _run(scenario, idempotency=_idempotent())
+    assert first.delivered is True
+
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("second"),))
+    scenario["targets"] = targets
+    second = _run(scenario, idempotency=_idempotent())
+
+    assert second.delivered is False
+    assert any(
+        failure.code == "formula_delivery_requires_records"
+        for failure in second.failures
+    )
+    north = next(item for item in second.targets if item.destination_key == NORTH)
+    assert north.status == "formula_delivery_failed"
+    assert load_run_record(state_path(scenario["delivery"]), TASK_KEY).status == FAILED
+
+
+def test_unchanged_formula_rules_reuse_the_verified_existing_workbook(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    targets = list(scenario["targets"])
+    targets[0] = replace(targets[0], formula_rules=(_static_formula_rule("same"),))
+    scenario["targets"] = targets
+
+    first = _run(scenario)
+    assert first.delivered is True
+    north_path = Path(
+        next(item for item in first.targets if item.destination_key == NORTH).delivery_path
+    )
+    before = north_path.read_bytes()
+
+    second = _run(scenario)
+
+    assert second.delivered is True
+    assert second.failures == ()
+    north = next(item for item in second.targets if item.destination_key == NORTH)
+    assert north.status == "no_new_records"
+    assert north.formula_evidence["status"] == "verified"
+    assert north_path.read_bytes() == before
 
 
 def test_plan_is_checkable_before_any_file_is_touched(tmp_path: Path):
