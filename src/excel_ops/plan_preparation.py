@@ -89,6 +89,8 @@ def prepare_delivery_plan(request: Mapping[str, Any]) -> dict[str, Any]:
         "confidence_threshold": request.get("confidenceThreshold", 0.85),
         "targets": targets,
     }
+    if "delivery" in request:
+        payload["delivery"] = request["delivery"]
     if request.get("recipe"):
         recipe = _resolve_existing_file(request["recipe"], root, allowed, "recipe")
         payload["recipe"] = _portable_path(recipe, plan_path.parent)

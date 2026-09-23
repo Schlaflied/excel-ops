@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -935,6 +936,18 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
     from excel_ops.cli import main
 
     scenario = _scenario(tmp_path)
+    template = Path(scenario["targets"][0].template_path)
+    workbook = load_workbook(template)
+    try:
+        for worksheet in workbook.worksheets:
+            for row in worksheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == "f":
+                        cell.value = None
+        workbook.save(template)
+    finally:
+        workbook.close()
+    scenario["before"][template] = template.read_bytes()
     config = tmp_path / "delivery-plan.json"
     config.write_text(
         json.dumps(
@@ -946,6 +959,10 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
                 ],
                 "staging_dir": "staging",
                 "delivery_dir": "delivery",
+                "delivery": {
+                    "formats": ["xlsx", "csv"],
+                    "csv": {"mode": "one-file-per-sheet"},
+                },
                 "targets": [
                     {
                         "key": NORTH,
@@ -991,6 +1008,13 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
     assert report["delivered"] is True
     assert report["counts"][WRITTEN] == 2
     assert Path(report["delivery_paths"][0]).is_file()
+    assert {item["actual_format"] for item in report["exports"]} == {"xlsx", "csv"}
+    manifest = json.loads(Path(report["manifest_paths"][0]).read_text(encoding="utf-8"))
+    assert {item["actual_format"] for item in manifest["exports"]} == {"xlsx", "csv"}
+    readable = Path(report["manifest_paths"][0]).with_suffix(".txt").read_text(encoding="utf-8")
+    assert "digest=" in readable
+    assert "verification=passed" in readable
+    assert "summary=verified output" in readable
     _assert_originals_untouched(scenario)
 
 
@@ -1118,6 +1142,184 @@ def test_an_idempotent_rerun_short_circuits_to_a_no_op(tmp_path: Path, monkeypat
         assert path.read_bytes() == before[key], "a no-op must not rewrite the delivery"
     json.dumps(second.to_dict(), default=str)
     _assert_originals_untouched(scenario)
+
+
+def test_a_missing_recorded_export_bypasses_no_op_and_is_regenerated(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    def attach_csv(run, manifests):
+        recovered = []
+        for manifest in manifests:
+            sibling = Path(manifest.output).with_suffix(".csv")
+            sibling.write_text("record_id\nsynthetic\n", encoding="utf-8")
+            evidence = {
+                "actual_format": "csv",
+                "output": str(sibling),
+                "sheets": [scenario["targets"][0].mapping.sheet],
+                "warnings": ["csv_drops_workbook_features"],
+                "digest": file_content_digest(sibling),
+                "verification": "passed",
+                "summary": "verified output",
+            }
+            recovered.append(replace(manifest, exports=(evidence,)))
+        return tuple(recovered)
+
+    first = _run(scenario, idempotency=options, artifact_hook=attach_csv)
+    assert first.delivered is True
+    missing = Path(first.manifests[0].exports[0]["output"])
+    missing.unlink()
+
+    retried = _run(scenario, idempotency=options, artifact_hook=attach_csv)
+
+    assert retried.no_op is False
+    assert retried.run_decision.decision == RETRY
+    assert retried.run_decision.reason == "recorded_export_missing_or_changed"
+    assert retried.manifest_paths
+    assert missing.is_file()
+    assert retried.manifests[0].exports
+    assert _run(scenario, idempotency=options, artifact_hook=attach_csv).no_op is True
+
+
+def test_a_changed_export_selection_bypasses_no_op(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    xlsx = {"formats": ["xlsx"], "selection": {}}
+    csv = {
+        "formats": ["xlsx", "csv"],
+        "selection": {"csv": {"mode": "one-file-per-sheet"}},
+    }
+
+    def attach(formats):
+        def hook(run, manifests):
+            attached = []
+            for manifest in manifests:
+                exports = []
+                for format_name in formats:
+                    output = Path(manifest.output)
+                    if format_name == "csv":
+                        output = output.with_suffix(".csv")
+                        output.write_text("record_id\nsynthetic\n", encoding="utf-8")
+                    exports.append(
+                        {
+                            "actual_format": format_name,
+                            "output": str(output),
+                            "sheets": ["synthetic"],
+                            "warnings": [],
+                            "digest": file_content_digest(output),
+                            "verification": "passed",
+                            "summary": "verified output",
+                        }
+                    )
+                attached.append(replace(manifest, exports=tuple(exports)))
+            return tuple(attached)
+
+        return hook
+
+    first = _run(
+        scenario,
+        idempotency=options,
+        artifact_fingerprint=xlsx,
+        artifact_hook=attach(("xlsx",)),
+    )
+    assert first.delivered is True
+    assert _run(
+        scenario,
+        idempotency=options,
+        artifact_fingerprint=xlsx,
+        artifact_hook=attach(("xlsx",)),
+    ).no_op is True
+
+    changed = _run(
+        scenario,
+        idempotency=options,
+        artifact_fingerprint=csv,
+        artifact_hook=attach(("xlsx", "csv")),
+    )
+
+    assert changed.no_op is False
+    assert changed.run_decision.decision == CHANGED
+    assert "mapping" in changed.run_decision.changed_components
+    assert len(changed.manifests) == len(first.manifests)
+    assert all(
+        {item["actual_format"] for item in manifest.exports} == {"xlsx", "csv"}
+        for manifest in changed.manifests
+    )
+
+
+def test_an_empty_target_does_not_prevent_an_unchanged_no_op(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    empty = replace(
+        scenario["targets"][0],
+        destination=Destination("Empty Depot", ("Empty Depot",)),
+        delivery_name="empty-depot.xlsx",
+    )
+    scenario["targets"].append(empty)
+    options = _idempotent()
+
+    def attach_xlsx(run, manifests):
+        return tuple(
+            replace(
+                manifest,
+                exports=(
+                    {
+                        "actual_format": "xlsx",
+                        "output": manifest.output,
+                        "sheets": ["synthetic"],
+                        "warnings": [],
+                        "digest": file_content_digest(manifest.output),
+                        "verification": "passed",
+                        "summary": "verified output",
+                    },
+                ),
+            )
+            for manifest in manifests
+        )
+
+    first = _run(scenario, idempotency=options, artifact_hook=attach_xlsx)
+    assert first.delivered is True
+    assert any(item.delivery_path is None for item in first.targets)
+
+    second = _run(scenario, idempotency=options, artifact_hook=attach_xlsx)
+
+    assert second.no_op is True
+
+
+def test_export_hook_fails_closed_when_existing_workbook_has_no_manifest(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    first = _run(scenario, write_manifest=False)
+    assert first.delivered is True
+    assert all(not Path(path).is_file() for path in first.manifest_paths)
+    hook_called = False
+
+    def unsafe_export(run, manifests):
+        nonlocal hook_called
+        hook_called = True
+        return manifests
+
+    second = _run(scenario, artifact_hook=unsafe_export)
+
+    assert second.delivered is False
+    assert hook_called is False
+    assert [item.code for item in second.failures] == ["manifest_recovery_failed"]
+    assert second.manifests == ()
+
+
+def test_cli_rejects_run_state_without_manifest():
+    from excel_ops.cli import main
+
+    with pytest.raises(SystemExit) as error:
+        main(
+            [
+                "deliver",
+                "unused.json",
+                "--run-state",
+                "state.json",
+                "--no-manifest",
+            ]
+        )
+
+    assert error.value.code == 2
 
 
 def test_a_changed_input_does_not_short_circuit(tmp_path: Path):
@@ -1351,6 +1553,62 @@ def test_a_manifest_write_failure_is_recorded_as_failed_and_the_next_run_retries
     assert healed.no_op is False
     assert healed.delivered is True
     assert healed.manifests
+
+
+def test_an_artifact_export_failure_is_recorded_as_failed_and_the_next_run_retries(
+    tmp_path: Path,
+):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    def fail_export(run, manifests):
+        raise ValueError("renderer unavailable")
+
+    failed = _run(scenario, idempotency=options, artifact_hook=fail_export)
+
+    assert failed.delivered is False
+    assert failed.manifests == ()
+    assert [item.code for item in failed.failures] == ["format_export_failed"]
+    record = load_run_record(state_path(scenario["delivery"]), TASK_KEY)
+    assert record is not None
+    assert record.status == FAILED
+    assert record.successful is False
+
+    base_manifest_paths = tuple(
+        Path(item.delivery_path).with_suffix(".xlsx.manifest.json")
+        for item in failed.targets
+        if item.delivery_path
+    )
+    assert base_manifest_paths
+    assert all(path.is_file() for path in base_manifest_paths)
+
+    evidence = {
+        "actual_format": "csv",
+        "output": "recovered.csv",
+        "sheets": ["北区"],
+        "warnings": [],
+        "digest": "sha256:recovered",
+        "verification": "passed",
+        "summary": "verified output",
+    }
+
+    def attach_recovered_export(run, manifests):
+        return tuple(replace(manifest, exports=(evidence,)) for manifest in manifests)
+
+    retried = _run(
+        scenario,
+        idempotency=options,
+        artifact_hook=attach_recovered_export,
+    )
+
+    assert retried.no_op is False
+    assert retried.run_decision.decision == RETRY
+    assert retried.delivered is True
+    assert retried.manifest_paths
+    assert retried.manifests[0].exports == (evidence,)
+    persisted = json.loads(Path(retried.manifest_paths[0]).read_text(encoding="utf-8"))
+    assert persisted["exports"] == [evidence]
+    assert _run(scenario, idempotency=options).no_op is True
 
 
 def test_a_dry_run_reports_the_verdict_without_short_circuiting(tmp_path: Path):

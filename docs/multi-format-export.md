@@ -2,7 +2,7 @@
 
 # Multi-format delivery export contract
 
-This document defines the first implementation boundary for [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22). It is a contract and design slice for the Draft PR; it does not claim that CSV or PDF export is implemented yet.
+This document defines the implemented multi-format delivery boundary for [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22). CSV and PDF adapters consume the verified XLSX delivery; they do not repeat matching or workbook business logic.
 
 ## User-facing request
 
@@ -41,14 +41,14 @@ CSV is a flat, single-sheet interchange format. It cannot preserve formulas, sty
 
 ### PDF
 
-PDF is a fixed-layout review and archival artifact, not an editable workbook. The first implementation must make the selected sheet scope explicit (`all` or a named list) and verify page rendering for pagination, scaling, repeated headers, clipping, and unreadable output before reporting success.
+PDF is a fixed-layout review and archival artifact, not an editable workbook. The selected sheet scope is explicit (`all` or a named list). The current adapters verify that a PDF file was produced, but report `verification: unverified` and `pdf_layout_not_verified` until page-level pagination, scaling, repeated-header, clipping, and readability checks are implemented.
 
 ## Pipeline boundary
 
 Format selection belongs in the delivery plan and is resolved before writing. Format adapters must consume the verified delivery result; they must not reimplement source matching, ambiguity decisions, template mapping, or business calculations.
 
 ```text
-plan → dry run → user confirmation → write XLSX → export CSV/PDF → reread/verify → manifest
+plan → dry run → user confirmation → write/verify XLSX → export CSV/PDF → record format-specific verification → manifest
 ```
 
 An individual export failure must not be represented as a successful complete delivery. The result should identify successful, blocked, and review-required artifacts separately.
@@ -63,6 +63,6 @@ The delivery Manifest should record an `exports` entry per artifact containing t
 2. Add an XLSX pass-through artifact and shared export result/Manifest shape.
 3. Add explicit single-sheet and one-file-per-sheet CSV export with tests.
 4. Add PDF export behind a capability check and page-level verification.
-5. Add MCP/CLI exposure, examples, and end-to-end tests for single, multi-format, multi-sheet CSV, and PDF flows.
+5. CLI/MCP exposure, examples, and end-to-end tests are integrated through the existing confirmed `run_delivery` tool.
 
-This Draft PR intentionally starts with the stable contract so subsequent adapter work can be reviewed independently. It references Issue #22 without closing it.
+`prepare_delivery` accepts the `delivery` object above. `plan_delivery` returns an `export_plan`; after explicit approval, `run_delivery` writes and verifies XLSX first, creates the selected siblings, and adds an `exports` array to the delivery Manifest. Each entry records actual format, source workbook, included sheets, content digest, verification status, loss warnings, and a renderer summary. See [`examples/multi-format-delivery.json`](../examples/multi-format-delivery.json).

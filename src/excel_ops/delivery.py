@@ -42,6 +42,8 @@ from .cells import column_number, is_merged_non_anchor, is_protected_formula_val
 from .delivery_manifest import (
     DeliveryManifest,
     build_delivery_manifests,
+    read_delivery_manifest,
+    recorded_exports_are_current,
     write_delivery_manifests,
 )
 from .delivery_verification import (
@@ -57,6 +59,7 @@ from .idempotency import (
     CHANGED,
     FAILED,
     NO_OP,
+    RETRY,
     STARTED,
     SUCCEEDED,
     ConnectorTarget,
@@ -434,6 +437,11 @@ def run_delivery(
     decisions: Sequence[RecipeDecision] = (),
     dry_run: bool = False,
     post_stage_hook: Callable[[Path], None] | None = None,
+    artifact_hook: Callable[
+        [DeliveryRun, tuple[DeliveryManifest, ...]], tuple[DeliveryManifest, ...]
+    ]
+    | None = None,
+    artifact_fingerprint: Mapping[str, Any] | None = None,
     idempotency: IdempotencyOptions | None = None,
     period: PeriodResult | None = None,
     write_manifest: bool = True,
@@ -444,6 +452,11 @@ def run_delivery(
     before verification.  It exists so callers and tests can inspect or corrupt
     the staged artifact and prove that verification, not the writer, decides
     whether a file is delivered.
+
+    ``artifact_hook`` runs after the verified workbooks and their in-memory
+    Manifests exist, but before evidence is written and idempotency is marked
+    successful.  It lets format adapters attach their evidence atomically to
+    the delivery result: an export failure makes the whole run retryable.
 
     ``idempotency`` opts this call into the whole-run short-circuit.  The run
     fingerprint is computed before any matching, write or verification; when it
@@ -471,9 +484,30 @@ def run_delivery(
 
     failures: list[DeliveryFailure] = []
     project_recipe, recipe_failure = _load_recipe(recipe_path)
-    guard = _RunGuard.of(inputs, targets, delivery, project_recipe, decisions, idempotency)
+    guard = _RunGuard.of(
+        inputs,
+        targets,
+        delivery,
+        project_recipe,
+        decisions,
+        idempotency,
+        artifact_fingerprint,
+    )
     if guard is not None and guard.decision.no_op and not dry_run:
-        return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
+        outputs = tuple(
+            output
+            for target in targets
+            for output in (_delivery_path(target, delivery),)
+            if output.is_file()
+        )
+        if artifact_hook is None or recorded_exports_are_current(outputs):
+            return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
+        guard.decision = RunDecision(
+            RETRY,
+            "recorded_export_missing_or_changed",
+            guard.decision.fingerprint,
+            guard.previous,
+        )
 
     records, record_inputs, ingest_failures = _ingest(inputs)
     failures.extend(ingest_failures)
@@ -576,6 +610,70 @@ def run_delivery(
         },
         record_input_paths=record_inputs,
     )
+    if artifact_hook is not None:
+        built_outputs = {Path(manifest.output).resolve() for manifest in manifests}
+        recovered = tuple(
+            manifest
+            for outcome in target_outcomes
+            if outcome.delivery_path
+            for manifest in (read_delivery_manifest(outcome.delivery_path),)
+            if manifest is not None and Path(manifest.output).resolve() not in built_outputs
+        )
+        manifests = (*manifests, *recovered)
+    if artifact_hook is not None and delivered:
+        manifest_outputs = {Path(manifest.output).resolve() for manifest in manifests}
+        missing_manifests = tuple(
+            outcome.delivery_path
+            for outcome in target_outcomes
+            if outcome.delivery_path
+            and Path(outcome.delivery_path).is_file()
+            and Path(outcome.delivery_path).resolve() not in manifest_outputs
+        )
+        if missing_manifests:
+            failures.append(
+                DeliveryFailure(
+                    "manifest_recovery_failed",
+                    "A Manifest could not be recovered for an existing workbook.",
+                    "Restore or rebuild the Manifest, then re-run the delivery.",
+                )
+            )
+            if guard is not None:
+                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
+            return replace(
+                run,
+                delivered=False,
+                failures=tuple(failures),
+                manifests=(),
+            )
+    if artifact_hook is not None and delivered:
+        try:
+            manifests = artifact_hook(run, manifests)
+        except (OSError, ValueError) as error:
+            artifact_failure = DeliveryFailure(
+                "format_export_failed",
+                f"A selected delivery format could not be exported: {error}",
+                "Correct the export scope or install a supported PDF renderer, then re-run.",
+            )
+            failures = [*failures, artifact_failure]
+            if write_manifest and manifests:
+                try:
+                    write_delivery_manifests(manifests)
+                except (OSError, ValueError) as manifest_error:
+                    failures.append(
+                        DeliveryFailure(
+                            "manifest_write_failed",
+                            f"The recovery manifest could not be written: {manifest_error}",
+                            "Check the delivery directory's permissions and re-run.",
+                        )
+                    )
+            if guard is not None:
+                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
+            return replace(
+                run,
+                delivered=False,
+                failures=tuple(failures),
+                manifests=(),
+            )
     if write_manifest:
         try:
             write_delivery_manifests(manifests)
@@ -710,13 +808,16 @@ class _RunGuard:
         project_recipe: Mapping[str, RecipeDecision],
         decisions: Sequence[RecipeDecision],
         options: IdempotencyOptions | None,
+        artifact_fingerprint: Mapping[str, Any] | None,
     ) -> "_RunGuard | None":
         if options is None:
             return None
         outputs = [_delivery_path(target, delivery) for target in targets]
         connector = options.connector or ConnectorTarget.local(outputs)
         templates = [target.template_path for target in targets]
-        mapping = _mapping_payload(targets)
+        mapping: Any = _mapping_payload(targets)
+        if artifact_fingerprint is not None:
+            mapping = {"targets": mapping, "artifacts": dict(artifact_fingerprint)}
         period = _period_payload(targets, options.period)
 
         def recompute() -> RunFingerprint:

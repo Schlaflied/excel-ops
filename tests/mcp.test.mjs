@@ -221,9 +221,11 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
     ],
   );
   const writeTool = listed.tools.find((tool) => tool.name === "excel_ops.run_delivery");
+  const prepareTool = listed.tools.find((tool) => tool.name === "excel_ops.prepare_delivery");
   assert.equal(writeTool.annotations.readOnlyHint, false);
   assert.equal(writeTool.annotations.destructiveHint, true);
   assert.ok(writeTool.inputSchema.required.includes("confirmed"));
+  assert.ok(prepareTool.inputSchema.required.includes("delivery"));
 
   const prepared = await client.callTool({
     name: "excel_ops.prepare_delivery",
@@ -231,6 +233,7 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
       directory: "work",
       planPath: "delivery-plan.json",
       inputs: ["source.csv"],
+      delivery: { formats: ["xlsx", "csv"], csv: { mode: "one-file-per-sheet" } },
       targets: [
         {
           key: "North",
@@ -253,6 +256,7 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
         stagingDir: "staging",
         deliveryDir: "delivery",
         confidenceThreshold: 0.85,
+        delivery: { formats: ["xlsx", "csv"], csv: { mode: "one-file-per-sheet" } },
         targets: [
           {
             key: "North",
