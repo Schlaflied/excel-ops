@@ -441,6 +441,7 @@ def run_delivery(
         [DeliveryRun, tuple[DeliveryManifest, ...]], tuple[DeliveryManifest, ...]
     ]
     | None = None,
+    artifact_fingerprint: Mapping[str, Any] | None = None,
     idempotency: IdempotencyOptions | None = None,
     period: PeriodResult | None = None,
     write_manifest: bool = True,
@@ -483,7 +484,15 @@ def run_delivery(
 
     failures: list[DeliveryFailure] = []
     project_recipe, recipe_failure = _load_recipe(recipe_path)
-    guard = _RunGuard.of(inputs, targets, delivery, project_recipe, decisions, idempotency)
+    guard = _RunGuard.of(
+        inputs,
+        targets,
+        delivery,
+        project_recipe,
+        decisions,
+        idempotency,
+        artifact_fingerprint,
+    )
     if guard is not None and guard.decision.no_op and not dry_run:
         outputs = tuple(_delivery_path(target, delivery) for target in targets)
         if artifact_hook is None or recorded_exports_are_current(outputs):
@@ -767,13 +776,16 @@ class _RunGuard:
         project_recipe: Mapping[str, RecipeDecision],
         decisions: Sequence[RecipeDecision],
         options: IdempotencyOptions | None,
+        artifact_fingerprint: Mapping[str, Any] | None,
     ) -> "_RunGuard | None":
         if options is None:
             return None
         outputs = [_delivery_path(target, delivery) for target in targets]
         connector = options.connector or ConnectorTarget.local(outputs)
         templates = [target.template_path for target in targets]
-        mapping = _mapping_payload(targets)
+        mapping: Any = _mapping_payload(targets)
+        if artifact_fingerprint is not None:
+            mapping = {"targets": mapping, "artifacts": dict(artifact_fingerprint)}
         period = _period_payload(targets, options.period)
 
         def recompute() -> RunFingerprint:

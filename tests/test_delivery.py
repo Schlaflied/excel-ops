@@ -1181,6 +1181,43 @@ def test_a_missing_recorded_export_bypasses_no_op_and_is_regenerated(tmp_path: P
     assert _run(scenario, idempotency=options, artifact_hook=attach_csv).no_op is True
 
 
+def test_a_changed_export_selection_bypasses_no_op(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+    xlsx = {"formats": ["xlsx"], "selection": {}}
+    csv = {
+        "formats": ["xlsx", "csv"],
+        "selection": {"csv": {"mode": "one-file-per-sheet"}},
+    }
+
+    first = _run(scenario, idempotency=options, artifact_fingerprint=xlsx)
+    assert first.delivered is True
+    assert _run(scenario, idempotency=options, artifact_fingerprint=xlsx).no_op is True
+
+    changed = _run(scenario, idempotency=options, artifact_fingerprint=csv)
+
+    assert changed.no_op is False
+    assert changed.run_decision.decision == CHANGED
+    assert "mapping" in changed.run_decision.changed_components
+
+
+def test_cli_rejects_run_state_without_manifest():
+    from excel_ops.cli import main
+
+    with pytest.raises(SystemExit) as error:
+        main(
+            [
+                "deliver",
+                "unused.json",
+                "--run-state",
+                "state.json",
+                "--no-manifest",
+            ]
+        )
+
+    assert error.value.code == 2
+
+
 def test_a_changed_input_does_not_short_circuit(tmp_path: Path):
     scenario = _scenario(tmp_path)
     options = _idempotent()

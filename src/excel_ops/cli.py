@@ -87,6 +87,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         args = deliver.parse_args(arguments[1:])
         if args.task_key and args.run_state is None:
             deliver.error("--task-key requires --run-state")
+        if args.run_state is not None and args.no_manifest:
+            deliver.error("--no-manifest cannot be combined with --run-state")
         config_path = Path(args.config)
         payload = json.loads(config_path.read_text(encoding="utf-8"))
         targets, options = load_delivery_targets(payload, base_dir=config_path.parent)
@@ -137,6 +139,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             dry_run=args.dry_run,
             write_manifest=not args.no_manifest,
             artifact_hook=attach_exports if not args.dry_run else None,
+            artifact_fingerprint={
+                "formats": list(export_formats),
+                "selection": export_selection,
+            },
             **options,
         )
         report = result.to_dict()
