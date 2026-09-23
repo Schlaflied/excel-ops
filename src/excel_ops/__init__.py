@@ -118,6 +118,14 @@ from .formula_planning import (
     LookupFormulaSpec,
     plan_formula,
 )
+from .formula_application import (
+    FormulaApplicationError,
+    FormulaApplicationResult,
+    FormulaChange,
+    FormulaSkip,
+    apply_formula_plan,
+    plan_formula_application,
+)
 from .pipeline import run_pipeline
 from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .workdir import (
@@ -235,6 +243,12 @@ __all__ = [
     "FormulaPlanError",
     "LookupFormulaSpec",
     "plan_formula",
+    "FormulaApplicationError",
+    "FormulaApplicationResult",
+    "FormulaChange",
+    "FormulaSkip",
+    "apply_formula_plan",
+    "plan_formula_application",
     "verify_output_name",
     "ClassificationOverride",
     "DuplicateGroup",
