@@ -126,6 +126,13 @@ from .formula_application import (
     apply_formula_plan,
     plan_formula_application,
 )
+from .formula_recalculation import (
+    FormulaEngineUnavailable,
+    FormulaRecalculationError,
+    FormulaRecalculationResult,
+    FormulaValueExpectation,
+    verify_formula_recalculation,
+)
 from .pipeline import run_pipeline
 from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .workdir import (
@@ -249,6 +256,11 @@ __all__ = [
     "FormulaSkip",
     "apply_formula_plan",
     "plan_formula_application",
+    "FormulaEngineUnavailable",
+    "FormulaRecalculationError",
+    "FormulaRecalculationResult",
+    "FormulaValueExpectation",
+    "verify_formula_recalculation",
     "verify_output_name",
     "ClassificationOverride",
     "DuplicateGroup",
