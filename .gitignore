@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 dist/
 build/
+node_modules/
 *.xlsx
 !examples/*.xlsx
 pytest-cache-files-*/

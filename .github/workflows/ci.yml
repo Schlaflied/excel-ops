@@ -28,8 +28,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: node --test tests/refresh.test.mjs
+          cache: npm
+      - run: npm ci
+      - run: npm run test:node
       - name: Check refresh-manifest.json is up to date
         run: node scripts/update-refresh-manifest.mjs --check
       - name: Check line endings
         run: git diff --check
+
+  mcp-integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: python -m pip install -e .
+      - run: npm ci
+      - run: npm run test:mcp-integration

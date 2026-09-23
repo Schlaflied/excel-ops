@@ -21,11 +21,11 @@ const HASH = /^[a-f0-9]{64}$/;
 const TEXT_EXTENSIONS = new Set([".md", ".py", ".mjs", ".json", ".toml", ".yaml", ".yml"]);
 const EXACT_SYSTEM = new Set([
   ".gitignore", "AGENTS.md", "LICENSE", "README.md", "README.zh-CN.md",
-  "pyproject.toml", "refresh.mjs", "issue-refresh-mjs.md",
+  "package-lock.json", "package.json", "pyproject.toml", "refresh.mjs", "issue-refresh-mjs.md",
   "assets/logo.png",
 ]);
 const SYSTEM_PREFIXES = [
-  ".agents/skills/excel-agent/", "docs/", "examples/", "scripts/",
+  ".agents/skills/excel-agent/", "docs/", "examples/", "mcp/", "scripts/",
   "src/excel_ops/", "tests/",
 ];
 export const PROTECTED_USER_PATHS = Object.freeze([
