@@ -1,5 +1,7 @@
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -119,3 +121,42 @@ def test_replace_requires_the_current_digest(tmp_path: Path):
     replaced = prepare_delivery_plan(request)
     assert replaced["status"] == "prepared"
     assert replaced["plan_digest"] != first["plan_digest"]
+
+
+def test_invalid_nested_shape_is_a_structured_request_error(tmp_path: Path):
+    with pytest.raises(PlanPreparationError) as invalid:
+        prepare_delivery_plan(
+            {
+                "directory": str(tmp_path),
+                "planPath": "delivery-plan.json",
+                "alsoAllow": None,
+                "inputs": [],
+                "targets": [],
+            }
+        )
+    assert invalid.value.code == "invalid_request"
+
+
+def test_digest_check_and_replace_are_serialized_per_plan(tmp_path: Path):
+    request = _scenario(tmp_path)
+    first = prepare_delivery_plan(request)
+    low = deepcopy(request)
+    high = deepcopy(request)
+    for candidate, confidence in ((low, 0.8), (high, 0.9)):
+        candidate["replace"] = True
+        candidate["expectedDigest"] = first["plan_digest"]
+        candidate["confidenceThreshold"] = confidence
+
+    def attempt(candidate):
+        try:
+            return prepare_delivery_plan(candidate)
+        except PlanPreparationError as error:
+            return error
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(attempt, (low, high)))
+
+    assert sum(isinstance(item, dict) for item in outcomes) == 1
+    errors = [item for item in outcomes if isinstance(item, PlanPreparationError)]
+    assert len(errors) == 1
+    assert errors[0].code == "plan_changed"

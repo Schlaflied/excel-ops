@@ -37,7 +37,7 @@ node mcp/server.mjs
 | 工具 | 是否写入 | 用途 |
 |---|---:|---|
 | `excel_ops.scan_workdir` | 否 | 扫描明确授权的目录，分类文件并报告重复文件或无法确定的新旧版本。 |
-| `excel_ops.prepare_delivery` | 仅计划文件 | 把 Agent 明确选择的输入、模板和映射写成经过校验且不含凭据的 `delivery-plan.json`；缺少决定时返回 review 而不猜测。 |
+| `excel_ops.prepare_delivery` | 仅计划文件 | 把 Agent 明确选择的输入、模板和映射写入 `planPath` 显式指定的计划文件；缺少决定时返回 review 而不猜测。 |
 | `excel_ops.plan_delivery` | 否 | 执行 `excel-ops deliver --dry-run`，返回拟议写入、复核项和阻断项。 |
 | `excel_ops.run_delivery` | 是 | 执行已获批准的交付，重新读取并验证输出，再返回交付证据。 |
 

@@ -37,7 +37,7 @@ By default the bridge runs `python -m excel_ops.cli`. `EXCEL_OPS_PYTHON` may poi
 | Tool | Mutation | Purpose |
 |---|---:|---|
 | `excel_ops.scan_workdir` | No | Classify files under explicitly authorized roots and report duplicates or uncertain versions. |
-| `excel_ops.prepare_delivery` | Plan file only | Turn explicit Agent selections into one validated, credential-free `delivery-plan.json`; return review items instead of guessing missing mappings. |
+| `excel_ops.prepare_delivery` | Plan file only | Write the caller-declared plan file from explicit Agent selections at `planPath`; return review items instead of guessing missing mappings. |
 | `excel_ops.plan_delivery` | No | Run `excel-ops deliver --dry-run` and return the proposed writes, review items, and blockers. |
 | `excel_ops.run_delivery` | Yes | Run an approved delivery, reread and verify its outputs, and return delivery evidence. |
 

@@ -43,6 +43,22 @@ test("the MCP bridge asks Python for missing plan decisions", async () => {
   assert.ok(response.result.review.some((item) => item.field === "inputs"));
 });
 
+test("the Python preparation CLI returns structured invalid-request errors", async () => {
+  const response = await runExcelOps("prepare_delivery", prepareArgs(), {
+    stdin: JSON.stringify({
+      directory: examples,
+      planPath: "delivery-plan.json",
+      alsoAllow: null,
+      inputs: [],
+      targets: [],
+    }),
+  });
+
+  assert.equal(response.status, "blocked");
+  assert.equal(response.error.category, "business_logic_blocked");
+  assert.equal(response.result.error.code, "invalid_request");
+});
+
 test("structured MCP intent prepares a plan that the dry-run consumes", async (t) => {
   const working = await mkdtemp(path.join(tmpdir(), "excel-ops-prepare-"));
   t.after(async () => rm(working, { recursive: true, force: true }));
