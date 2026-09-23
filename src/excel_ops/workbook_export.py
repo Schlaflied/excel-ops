@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
@@ -58,20 +59,38 @@ def export_csv(
             raise WorkbookExportError(f"unknown worksheet(s): {', '.join(missing)}")
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         outputs: list[Path] = []
+        staged: list[tuple[Path, Path]] = []
         used_names: set[str] = set()
-        for name in selected:
-            output = destination_path if sheet is not None else destination_path / _portable_sheet_filename(name, used_names)
-            if sheet is None and destination_path.suffix:
-                raise WorkbookExportError("multi-sheet CSV destination must be a directory")
-            if output.suffix.lower() != ".csv":
-                raise WorkbookExportError("CSV output must end in .csv")
-            output.parent.mkdir(parents=True, exist_ok=True)
-            with output.open("w", encoding="utf-8-sig", newline="") as stream:
-                writer = csv.writer(stream, lineterminator="\n")
-                for row in _cached_rows(workbook[name], values_workbook[name]):
-                    writer.writerow(list(row))
-            outputs.append(output)
-        return tuple(outputs)
+        try:
+            for name in selected:
+                output = destination_path if sheet is not None else destination_path / _portable_sheet_filename(name, used_names)
+                if sheet is None and destination_path.suffix:
+                    raise WorkbookExportError("multi-sheet CSV destination must be a directory")
+                if output.suffix.lower() != ".csv":
+                    raise WorkbookExportError("CSV output must end in .csv")
+                output.parent.mkdir(parents=True, exist_ok=True)
+                handle = tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8-sig", newline="", dir=output.parent,
+                    prefix=f".{output.stem}-", suffix=".tmp", delete=False,
+                )
+                temporary = Path(handle.name)
+                try:
+                    with handle:
+                        writer = csv.writer(handle, lineterminator="\n")
+                        for row in _cached_rows(workbook[name], values_workbook[name]):
+                            writer.writerow([_safe_csv_value(value) for value in row])
+                    staged.append((temporary, output))
+                except Exception:
+                    temporary.unlink(missing_ok=True)
+                    raise
+                outputs.append(output)
+            for temporary, output in staged:
+                temporary.replace(output)
+            return tuple(outputs)
+        except Exception:
+            for temporary, _ in staged:
+                temporary.unlink(missing_ok=True)
+            raise
     finally:
         workbook.close()
         values_workbook.close()
@@ -85,7 +104,7 @@ def _cached_rows(formula_sheet, values_sheet):
     ):
         values = []
         for formula_cell, cached in zip(formula_row, values_row):
-            if isinstance(formula_cell.value, str) and formula_cell.value.startswith("=") and cached is None:
+            if formula_cell.data_type == "f" and cached is None:
                 raise WorkbookExportError(
                     f"formula has no cached result: {formula_sheet.title}!{formula_cell.coordinate}"
                 )
@@ -100,7 +119,13 @@ def _portable_sheet_filename(title: str, used: set[str]) -> str:
     stem = "".join("_" if char in invalid or ord(char) < 32 else char for char in title).strip(" .")
     if not stem:
         stem = "sheet"
-    if stem.upper() in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+    base = stem.split(".", 1)[0].upper()
+    reserved = {"CON", "PRN", "AUX", "NUL"}
+    reserved.update(f"COM{i}" for i in range(1, 10))
+    reserved.update(f"LPT{i}" for i in range(1, 10))
+    reserved.update(f"COM{i}\N{SUPERSCRIPT ONE}" for i in range(1, 4))
+    reserved.update(f"LPT{i}\N{SUPERSCRIPT ONE}" for i in range(1, 4))
+    if base in reserved:
         stem = f"_{stem}"
     candidate = f"{stem}.csv"
     index = 2
@@ -109,3 +134,11 @@ def _portable_sheet_filename(title: str, used: set[str]) -> str:
         index += 1
     used.add(candidate)
     return candidate
+
+
+def _safe_csv_value(value):
+    """Prefix spreadsheet formula triggers in text cells before CSV output."""
+
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value

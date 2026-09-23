@@ -79,6 +79,20 @@ def test_csv_rejects_formula_without_cached_result(tmp_path):
         export_csv(source, tmp_path / "out.csv", sheet="Sheet")
 
 
+def test_csv_neutralizes_formula_like_text(tmp_path):
+    source = tmp_path / "source.xlsx"
+    workbook = Workbook()
+    workbook.active["A1"] = "=not-a-formula"
+    workbook.save(source)
+    # openpyxl stores this as a formula; a plain text value is tested through
+    # a leading apostrophe, which Excel preserves as visible text.
+    workbook = load_workbook(source)
+    workbook.active["A1"] = "'=not-a-formula"
+    workbook.save(source)
+    outputs = export_csv(source, tmp_path / "out.csv", sheet="Sheet")
+    assert outputs[0].read_text(encoding="utf-8-sig").strip() == "'=not-a-formula"
+
+
 def test_xlsm_is_not_silently_renamed_to_xlsx(tmp_path):
     source = tmp_path / "source.xlsm"
     source.write_bytes(b"not a workbook")
