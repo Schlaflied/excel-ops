@@ -494,7 +494,12 @@ def run_delivery(
         artifact_fingerprint,
     )
     if guard is not None and guard.decision.no_op and not dry_run:
-        outputs = tuple(_delivery_path(target, delivery) for target in targets)
+        outputs = tuple(
+            output
+            for target in targets
+            for output in (_delivery_path(target, delivery),)
+            if output.is_file()
+        )
         if artifact_hook is None or recorded_exports_are_current(outputs):
             return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
         guard.decision = RunDecision(
@@ -605,14 +610,16 @@ def run_delivery(
         },
         record_input_paths=record_inputs,
     )
-    if not manifests and guard is not None and guard.decision.decision == "retry":
-        manifests = tuple(
+    if artifact_hook is not None:
+        built_outputs = {Path(manifest.output).resolve() for manifest in manifests}
+        recovered = tuple(
             manifest
             for outcome in target_outcomes
             if outcome.delivery_path
             for manifest in (read_delivery_manifest(outcome.delivery_path),)
-            if manifest is not None
+            if manifest is not None and Path(manifest.output).resolve() not in built_outputs
         )
+        manifests = (*manifests, *recovered)
     if artifact_hook is not None and delivered:
         try:
             manifests = artifact_hook(run, manifests)

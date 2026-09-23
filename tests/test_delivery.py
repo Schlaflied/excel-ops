@@ -1190,15 +1190,99 @@ def test_a_changed_export_selection_bypasses_no_op(tmp_path: Path):
         "selection": {"csv": {"mode": "one-file-per-sheet"}},
     }
 
-    first = _run(scenario, idempotency=options, artifact_fingerprint=xlsx)
-    assert first.delivered is True
-    assert _run(scenario, idempotency=options, artifact_fingerprint=xlsx).no_op is True
+    def attach(formats):
+        def hook(run, manifests):
+            attached = []
+            for manifest in manifests:
+                exports = []
+                for format_name in formats:
+                    output = Path(manifest.output)
+                    if format_name == "csv":
+                        output = output.with_suffix(".csv")
+                        output.write_text("record_id\nsynthetic\n", encoding="utf-8")
+                    exports.append(
+                        {
+                            "actual_format": format_name,
+                            "output": str(output),
+                            "sheets": ["synthetic"],
+                            "warnings": [],
+                            "digest": file_content_digest(output),
+                            "verification": "passed",
+                            "summary": "verified output",
+                        }
+                    )
+                attached.append(replace(manifest, exports=tuple(exports)))
+            return tuple(attached)
 
-    changed = _run(scenario, idempotency=options, artifact_fingerprint=csv)
+        return hook
+
+    first = _run(
+        scenario,
+        idempotency=options,
+        artifact_fingerprint=xlsx,
+        artifact_hook=attach(("xlsx",)),
+    )
+    assert first.delivered is True
+    assert _run(
+        scenario,
+        idempotency=options,
+        artifact_fingerprint=xlsx,
+        artifact_hook=attach(("xlsx",)),
+    ).no_op is True
+
+    changed = _run(
+        scenario,
+        idempotency=options,
+        artifact_fingerprint=csv,
+        artifact_hook=attach(("xlsx", "csv")),
+    )
 
     assert changed.no_op is False
     assert changed.run_decision.decision == CHANGED
     assert "mapping" in changed.run_decision.changed_components
+    assert len(changed.manifests) == len(first.manifests)
+    assert all(
+        {item["actual_format"] for item in manifest.exports} == {"xlsx", "csv"}
+        for manifest in changed.manifests
+    )
+
+
+def test_an_empty_target_does_not_prevent_an_unchanged_no_op(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    empty = replace(
+        scenario["targets"][0],
+        destination=Destination("Empty Depot", ("Empty Depot",)),
+        delivery_name="empty-depot.xlsx",
+    )
+    scenario["targets"].append(empty)
+    options = _idempotent()
+
+    def attach_xlsx(run, manifests):
+        return tuple(
+            replace(
+                manifest,
+                exports=(
+                    {
+                        "actual_format": "xlsx",
+                        "output": manifest.output,
+                        "sheets": ["synthetic"],
+                        "warnings": [],
+                        "digest": file_content_digest(manifest.output),
+                        "verification": "passed",
+                        "summary": "verified output",
+                    },
+                ),
+            )
+            for manifest in manifests
+        )
+
+    first = _run(scenario, idempotency=options, artifact_hook=attach_xlsx)
+    assert first.delivered is True
+    assert any(item.delivery_path is None for item in first.targets)
+
+    second = _run(scenario, idempotency=options, artifact_hook=attach_xlsx)
+
+    assert second.no_op is True
 
 
 def test_cli_rejects_run_state_without_manifest():
