@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import shutil
 import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from typing import Iterable
 
@@ -77,7 +79,10 @@ def export_csv(
                 try:
                     with handle:
                         writer = csv.writer(handle, lineterminator="\n")
-                        for row in _cached_rows(workbook[name], values_workbook[name]):
+                        cached_formula_cells = _cached_formula_cells(source_path, workbook[name])
+                        for row in _cached_rows(
+                            workbook[name], values_workbook[name], cached_formula_cells
+                        ):
                             writer.writerow([_safe_csv_value(value) for value in row])
                     staged.append((temporary, output))
                 except Exception:
@@ -96,7 +101,7 @@ def export_csv(
         values_workbook.close()
 
 
-def _cached_rows(formula_sheet, values_sheet):
+def _cached_rows(formula_sheet, values_sheet, cached_formula_cells: set[str]):
     """Yield cached formula results, rejecting formulas without cached values."""
 
     for formula_row, values_row in zip(
@@ -104,7 +109,11 @@ def _cached_rows(formula_sheet, values_sheet):
     ):
         values = []
         for formula_cell, cached in zip(formula_row, values_row):
-            if formula_cell.data_type == "f" and cached is None:
+            if (
+                formula_cell.data_type == "f"
+                and cached is None
+                and formula_cell.coordinate not in cached_formula_cells
+            ):
                 raise WorkbookExportError(
                     f"formula has no cached result: {formula_sheet.title}!{formula_cell.coordinate}"
                 )
@@ -123,8 +132,8 @@ def _portable_sheet_filename(title: str, used: set[str]) -> str:
     reserved = {"CON", "PRN", "AUX", "NUL"}
     reserved.update(f"COM{i}" for i in range(1, 10))
     reserved.update(f"LPT{i}" for i in range(1, 10))
-    reserved.update(f"COM{i}\N{SUPERSCRIPT ONE}" for i in range(1, 4))
-    reserved.update(f"LPT{i}\N{SUPERSCRIPT ONE}" for i in range(1, 4))
+    reserved.update(f"COM{superscript}" for superscript in "¹²³")
+    reserved.update(f"LPT{superscript}" for superscript in "¹²³")
     if base in reserved:
         stem = f"_{stem}"
     candidate = f"{stem}.csv"
@@ -139,6 +148,21 @@ def _portable_sheet_filename(title: str, used: set[str]) -> str:
 def _safe_csv_value(value):
     """Prefix spreadsheet formula triggers in text cells before CSV output."""
 
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
         return "'" + value
     return value
+
+
+def _cached_formula_cells(source: Path, sheet) -> set[str]:
+    """Return formula coordinates whose worksheet XML contains a value node."""
+
+    with zipfile.ZipFile(source) as archive:
+        root = ET.fromstring(archive.read(sheet._worksheet_path))
+    namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    return {
+        cell.attrib["r"]
+        for cell in root.iter(f"{namespace}c")
+        if cell.find(f"{namespace}f") is not None
+        and (value := cell.find(f"{namespace}v")) is not None
+        and (value.text is not None or cell.attrib.get("t") == "str")
+    }

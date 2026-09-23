@@ -70,7 +70,7 @@
     "src/excel_ops/schema_drift.py": "aa9085267d4918a3894a1874c5b0fab0720df20a80d54e7f9e189e3e42064f50",
     "src/excel_ops/template_writer.py": "890e417eb3429d2ccac8786974ccd3140934c79065527312d5ee839327087803",
     "src/excel_ops/workbook.py": "56a8a13e2b9cdc583301610ff12b4d46789320c21fdc06b8bee783b5bba42f67",
-    "src/excel_ops/workbook_export.py": "5105db4ede4c4d1b1dff5e555a00010d2b1a8f65e9b02ff3737f1a47d1ce6468",
+    "src/excel_ops/workbook_export.py": "85cde54e7b532037f9a66eb4012492d8119931c7ffdf63cf0d61e9c2eaa27d82",
     "src/excel_ops/workdir.py": "54cedfe78b028b953b8a0c3fd7f054e0cc4039b2ce7f892b2061963b2d3ba32f",
     "tests/mcp-cli.integration.test.mjs": "a1c6f60333be153de92143c137cd93d5456c17f6464c54cd81e83e8d4b9dda00",
     "tests/mcp.test.mjs": "ac55933ff902a0739a0889ceafbf148bb5f10a124821bd13a6252087eb393487",
@@ -94,7 +94,7 @@
     "tests/test_review_pack.py": "c0903c16b022c362693a3efc216f13fb95b0b8eaa544fd803898b237e5a986c7",
     "tests/test_schema_drift.py": "c3ff096e4a0f48a69c0475632b57458a6691b52842e02da3dca357ad81980da6",
     "tests/test_template_writer.py": "53c82e94be8a826cae802b56b2baed2777189ecf066a105add5ae116e629e677",
-    "tests/test_workbook_export.py": "05a7d091d1d922768eb6b1068ce96d560694d7e868b59f5d6e2b4f568c5c55dc",
+    "tests/test_workbook_export.py": "7a53bd43a53de3f2234f8904d39d3b99f449286754fc8e609f6ceec8444dad27",
     "tests/test_workdir.py": "2e6f50671d9936208b7e1fce8f827482bbd3203925cd388b924125f7d73a2532"
   }
 }

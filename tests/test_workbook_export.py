@@ -70,6 +70,17 @@ def test_csv_sanitizes_windows_sheet_names(tmp_path):
     assert [path.name for path in outputs] == ["_CON.csv", "Summary.csv"]
 
 
+def test_csv_sanitizes_reserved_names_with_extensions_and_superscripts(tmp_path):
+    source = tmp_path / "source.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "CON.report"
+    workbook.create_sheet("COM²")
+    workbook.create_sheet("LPT³")
+    workbook.save(source)
+    outputs = export_csv(source, tmp_path / "csv")
+    assert [path.name for path in outputs] == ["_CON.report.csv", "_COM².csv", "_LPT³.csv"]
+
+
 def test_csv_rejects_formula_without_cached_result(tmp_path):
     source = tmp_path / "source.xlsx"
     workbook = Workbook()
@@ -82,15 +93,23 @@ def test_csv_rejects_formula_without_cached_result(tmp_path):
 def test_csv_neutralizes_formula_like_text(tmp_path):
     source = tmp_path / "source.xlsx"
     workbook = Workbook()
-    workbook.active["A1"] = "=not-a-formula"
-    workbook.save(source)
-    # openpyxl stores this as a formula; a plain text value is tested through
-    # a leading apostrophe, which Excel preserves as visible text.
-    workbook = load_workbook(source)
-    workbook.active["A1"] = "'=not-a-formula"
+    cell = workbook.active["A1"]
+    cell.value = "=not-a-formula"
+    cell.data_type = "s"
     workbook.save(source)
     outputs = export_csv(source, tmp_path / "out.csv", sheet="Sheet")
     assert outputs[0].read_text(encoding="utf-8-sig").strip() == "'=not-a-formula"
+
+
+@pytest.mark.parametrize("value", ["\t=SUM(A1:A2)", "\r+1", "\n@cmd"])
+def test_csv_neutralizes_control_prefixes(tmp_path, value):
+    source = tmp_path / "source.xlsx"
+    workbook = Workbook()
+    workbook.active["A1"] = value
+    workbook.save(source)
+    export_csv(source, tmp_path / "out.csv", sheet="Sheet")
+    with (tmp_path / "out.csv").open(encoding="utf-8-sig", newline="") as stream:
+        assert next(csv.reader(stream))[0].startswith("'")
 
 
 def test_xlsm_is_not_silently_renamed_to_xlsx(tmp_path):
