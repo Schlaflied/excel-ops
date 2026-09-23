@@ -1,4 +1,5 @@
 import csv
+import zipfile
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -88,6 +89,22 @@ def test_csv_rejects_formula_without_cached_result(tmp_path):
     workbook.save(source)
     with pytest.raises(WorkbookExportError, match="no cached result"):
         export_csv(source, tmp_path / "out.csv", sheet="Sheet")
+
+
+def test_formula_cache_parser_infers_missing_cell_coordinate(tmp_path):
+    source = tmp_path / "source.xlsx"
+    rewritten = tmp_path / "rewritten.xlsx"
+    workbook = Workbook()
+    workbook.active["A1"] = "=1+1"
+    workbook.save(source)
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(rewritten, "w") as target:
+        for info in original.infolist():
+            data = original.read(info.filename)
+            if info.filename == "xl/worksheets/sheet1.xml":
+                data = data.replace(b'<c r="A1"', b"<c", 1)
+            target.writestr(info, data)
+    with pytest.raises(WorkbookExportError, match="no cached result"):
+        export_csv(rewritten, tmp_path / "out.csv", sheet="Sheet")
 
 
 def test_csv_neutralizes_formula_like_text(tmp_path):

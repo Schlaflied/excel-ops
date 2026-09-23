@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Iterable
 
 from openpyxl import load_workbook
+from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils.cell import coordinate_from_string
 
 
 class WorkbookExportError(ValueError):
@@ -156,13 +158,36 @@ def _safe_csv_value(value):
 def _cached_formula_cells(source: Path, sheet) -> set[str]:
     """Return formula coordinates whose worksheet XML contains a value node."""
 
-    with zipfile.ZipFile(source) as archive:
-        root = ET.fromstring(archive.read(sheet._worksheet_path))
     namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    return {
-        cell.attrib["r"]
-        for cell in root.iter(f"{namespace}c")
-        if cell.find(f"{namespace}f") is not None
-        and (value := cell.find(f"{namespace}v")) is not None
-        and (value.text is not None or cell.attrib.get("t") == "str")
-    }
+    cached: set[str] = set()
+    current_row = 0
+    next_row = 1
+    current_column = 0
+    with zipfile.ZipFile(source) as archive:
+        with archive.open(sheet._worksheet_path) as stream:
+            for event, element in ET.iterparse(stream, events=("start", "end")):
+                if event == "start" and element.tag == f"{namespace}row":
+                    current_row = int(element.attrib.get("r", next_row))
+                    current_column = 0
+                elif event == "end" and element.tag == f"{namespace}c":
+                    explicit = element.attrib.get("r")
+                    if explicit:
+                        column_name, row_number = coordinate_from_string(explicit)
+                        current_column = column_index_from_string(column_name)
+                        coordinate = f"{column_name}{row_number}"
+                    else:
+                        current_column += 1
+                        coordinate = f"{get_column_letter(current_column)}{current_row}"
+                    formula = element.find(f"{namespace}f")
+                    value = element.find(f"{namespace}v")
+                    if (
+                        formula is not None
+                        and value is not None
+                        and (value.text is not None or element.attrib.get("t") == "str")
+                    ):
+                        cached.add(coordinate)
+                    element.clear()
+                elif event == "end" and element.tag == f"{namespace}row":
+                    next_row = current_row + 1
+                    element.clear()
+    return cached
