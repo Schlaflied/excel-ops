@@ -160,13 +160,16 @@ def _cached_formula_cells(source: Path, sheet) -> set[str]:
 
     namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     cached: set[str] = set()
+    sheet_data = None
     current_row = 0
     next_row = 1
     current_column = 0
     with zipfile.ZipFile(source) as archive:
         with archive.open(sheet._worksheet_path) as stream:
             for event, element in ET.iterparse(stream, events=("start", "end")):
-                if event == "start" and element.tag == f"{namespace}row":
+                if event == "start" and element.tag == f"{namespace}sheetData":
+                    sheet_data = element
+                elif event == "start" and element.tag == f"{namespace}row":
                     current_row = int(element.attrib.get("r", next_row))
                     current_column = 0
                 elif event == "end" and element.tag == f"{namespace}c":
@@ -190,4 +193,6 @@ def _cached_formula_cells(source: Path, sheet) -> set[str]:
                 elif event == "end" and element.tag == f"{namespace}row":
                     next_row = current_row + 1
                     element.clear()
+                    if sheet_data is not None:
+                        sheet_data.clear()
     return cached
