@@ -102,6 +102,7 @@ from .formula_verification import (
     SummaryReconciliation,
 )
 from .pipeline import run_pipeline
+from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .workdir import (
     ClassificationOverride,
     DuplicateGroup,
@@ -193,6 +194,8 @@ __all__ = [
     "policy_manifest",
     "resolve_format_policy",
     "run_pipeline",
+    "PlanPreparationError",
+    "prepare_delivery_plan",
     "save_project_recipe",
     "stable_record_id",
     "write_review_pack",

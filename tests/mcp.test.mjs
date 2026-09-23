@@ -10,6 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import {
   classifyCliResult,
   deliveryArgs,
+  prepareArgs,
   runExcelOps,
   scanArgs,
 } from "../mcp/bridge.mjs";
@@ -22,6 +23,7 @@ function fakeProcess(run) {
     const child = new EventEmitter();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
+    child.stdin = new PassThrough();
     child.kill = () => true;
     queueMicrotask(() => run(child));
     return child;
@@ -128,6 +130,7 @@ test("bridge reports signal termination as an environment failure", async () => 
 });
 
 test("argument builders preserve CLI boundaries without using a shell", () => {
+  assert.deepEqual(prepareArgs(), ["prepare-delivery"]);
   assert.deepEqual(
     deliveryArgs("plans/weekly.json", {
       dryRun: true,
@@ -178,17 +181,22 @@ test("argument builders preserve CLI boundaries without using a shell", () => {
   );
 });
 
-test("MCP lists three bounded tools and calls the dry-run path end to end", async (t) => {
+test("MCP lists four bounded tools and calls preparation and dry-run end to end", async (t) => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const calls = [];
   const server = createExcelOpsServer({
-    invoke: async (operation, args) => {
-      calls.push({ operation, args });
+    invoke: async (operation, args, options) => {
+      calls.push({ operation, args, options });
       return {
         contractVersion: "excel-ops-agent-v1",
         operation,
         ok: true,
-        status: operation === "plan_delivery" ? "planned" : "completed",
+        status:
+          operation === "prepare_delivery"
+            ? "prepared"
+            : operation === "plan_delivery"
+              ? "planned"
+              : "completed",
         durationMs: 1,
         result: { dry_run: operation === "plan_delivery" },
       };
@@ -207,6 +215,7 @@ test("MCP lists three bounded tools and calls the dry-run path end to end", asyn
     listed.tools.map((tool) => tool.name).sort(),
     [
       "excel_ops.plan_delivery",
+      "excel_ops.prepare_delivery",
       "excel_ops.run_delivery",
       "excel_ops.scan_workdir",
     ],
@@ -216,15 +225,57 @@ test("MCP lists three bounded tools and calls the dry-run path end to end", asyn
   assert.equal(writeTool.annotations.destructiveHint, true);
   assert.ok(writeTool.inputSchema.required.includes("confirmed"));
 
+  const prepared = await client.callTool({
+    name: "excel_ops.prepare_delivery",
+    arguments: {
+      directory: "work",
+      planPath: "delivery-plan.json",
+      inputs: ["source.csv"],
+      targets: [
+        {
+          key: "North",
+          template: "template.xlsx",
+          sheet: "Data",
+          fieldColumns: { record_id: "A" },
+        },
+      ],
+    },
+  });
+  assert.equal(prepared.structuredContent.status, "prepared");
+  assert.deepEqual(calls[0], {
+    operation: "prepare_delivery",
+    args: ["prepare-delivery"],
+    options: {
+      stdin: JSON.stringify({
+        directory: "work",
+        planPath: "delivery-plan.json",
+        inputs: ["source.csv"],
+        stagingDir: "staging",
+        deliveryDir: "delivery",
+        confidenceThreshold: 0.85,
+        targets: [
+          {
+            key: "North",
+            template: "template.xlsx",
+            sheet: "Data",
+            fieldColumns: { record_id: "A" },
+          },
+        ],
+        replace: false,
+      }),
+    },
+  });
+
   const response = await client.callTool({
     name: "excel_ops.plan_delivery",
     arguments: { config: "plans/weekly.json" },
   });
   assert.equal(response.isError, false);
   assert.equal(response.structuredContent.status, "planned");
-  assert.deepEqual(calls[0], {
+  assert.deepEqual(calls[1], {
     operation: "plan_delivery",
     args: ["deliver", "plans/weekly.json", "--dry-run"],
+    options: undefined,
   });
 });
 
@@ -264,6 +315,7 @@ test("the packaged stdio entrypoint keeps stdout clean and lists its tools", asy
 
   await client.connect(transport);
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 3);
+  assert.equal(listed.tools.length, 4);
+  assert.ok(listed.tools.some((tool) => tool.name === "excel_ops.prepare_delivery"));
   assert.ok(listed.tools.some((tool) => tool.name === "excel_ops.plan_delivery"));
 });

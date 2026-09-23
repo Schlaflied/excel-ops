@@ -24,7 +24,7 @@ In Codex or another agent that follows the Agent Skills standard, invoke the rep
 
 `$excel-agent` is the only user-facing entry point. The Python CLI remains an internal deterministic capability used by the agent and by automated tests.
 
-Agents that support MCP can launch the local `excel-ops-mcp` stdio server. It exposes a read-only working-directory scan, a read-only delivery plan, and an explicitly confirmed delivery tool while keeping all spreadsheet decisions in the existing Python core. See [Agent MCP server](docs/mcp.md).
+Agents that support MCP can launch the local `excel-ops-mcp` stdio server. It exposes working-directory scan, validated delivery-plan preparation, read-only dry runs, and explicitly confirmed delivery while keeping all spreadsheet decisions in the existing Python core. See [Agent MCP server](docs/mcp.md).
 
 The initial connector order is local XLSX/CSV, local cloud-sync folders, Google Sheets, Dropbox API, Feishu Sheets, and WPS Sheets. Cloud credentials belong to the user's environment and are never stored in a project or delivery package.
 

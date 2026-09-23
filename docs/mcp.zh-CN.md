@@ -37,8 +37,11 @@ node mcp/server.mjs
 | 工具 | 是否写入 | 用途 |
 |---|---:|---|
 | `excel_ops.scan_workdir` | 否 | 扫描明确授权的目录，分类文件并报告重复文件或无法确定的新旧版本。 |
+| `excel_ops.prepare_delivery` | 仅计划文件 | 把 Agent 明确选择的输入、模板和映射写入 `planPath` 显式指定的计划文件；缺少决定时返回 review 而不猜测。 |
 | `excel_ops.plan_delivery` | 否 | 执行 `excel-ops deliver --dry-run`，返回拟议写入、复核项和阻断项。 |
 | `excel_ops.run_delivery` | 是 | 执行已获批准的交付，重新读取并验证输出，再返回交付证据。 |
+
+推荐的 Agent 顺序是 `scan_workdir → prepare_delivery → plan_delivery → 用户明确确认 → run_delivery`。准备工具接收结构化意图而不是自然语言：由 Host Agent 选择输入并提供目标模板、sheet 与字段映射。缺少业务决定时返回 `needs_review`，不会写出可执行计划。所有路径必须留在明确授权的根目录中；默认拒绝覆盖已有计划，替换时必须提供当前 SHA-256 摘要。
 
 `run_delivery` 强制要求 `confirmed: true`。调用方只有在展示 dry-run 计划并获得用户明确授权后才能设置它。MCP annotation 可以帮助 Host 展示风险区别，服务端还会独立验证确认字段。
 
@@ -61,6 +64,7 @@ CLI 无法启动、超时或被外部信号终止时归类为 `environment_error
 
 - stdout 只承载 MCP JSON-RPC；诊断信息进入 stderr。
 - 源文件保持不变；交付沿用直接 CLI 调用时相同的 staging、写后回读和 Manifest 规则。
+- `prepare_delivery` 只写显式指定的计划文件，不写工作簿，也不能绕过 dry run。
 - 除非另行实现的 connector 明确调用远端平台，否则路径和工作簿都留在本地。
 - 本服务不实现 Google Sheets、Dropbox、飞书、WPS 或其他云端连接器。
 

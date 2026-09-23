@@ -5,13 +5,22 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { pathToFileURL } from "node:url";
 import * as z from "zod/v4";
 
-import { deliveryArgs, runExcelOps, scanArgs } from "./bridge.mjs";
+import { deliveryArgs, prepareArgs, runExcelOps, scanArgs } from "./bridge.mjs";
 
 const ResultSchema = z.object({
   contractVersion: z.literal("excel-ops-agent-v1"),
-  operation: z.enum(["scan_workdir", "plan_delivery", "run_delivery"]),
+  operation: z.enum(["scan_workdir", "prepare_delivery", "plan_delivery", "run_delivery"]),
   ok: z.boolean(),
-  status: z.enum(["completed", "planned", "delivered", "no_op", "blocked", "failed"]),
+  status: z.enum([
+    "completed",
+    "prepared",
+    "needs_review",
+    "planned",
+    "delivered",
+    "no_op",
+    "blocked",
+    "failed",
+  ]),
   durationMs: z.number().nonnegative(),
   result: z.record(z.string(), z.unknown()).optional(),
   error: z
@@ -56,6 +65,61 @@ export function createExcelOpsServer(options = {}) {
       instructions:
         "Plan first, preserve source files, never guess ambiguous business facts, and only call run_delivery after the user has approved the write.",
     },
+  );
+
+  server.registerTool(
+    "excel_ops.prepare_delivery",
+    {
+      title: "Prepare an Excel delivery plan",
+      description:
+        "Writes a validated, credential-free delivery-plan JSON from explicit Agent selections. It never writes a workbook and returns review items instead of guessing missing business mappings.",
+      inputSchema: z.object({
+        directory: z.string().min(1),
+        alsoAllow: z.array(z.string().min(1)).optional(),
+        planPath: z.string().min(1),
+        inputs: z.array(z.string().min(1)).default([]),
+        stagingDir: z.string().min(1).default("staging"),
+        deliveryDir: z.string().min(1).default("delivery"),
+        confidenceThreshold: z.number().min(0).max(1).default(0.85),
+        recipe: z.string().min(1).optional(),
+        targets: z
+          .array(
+            z.object({
+              key: z.string().optional(),
+              aliases: z.array(z.string()).optional(),
+              template: z.string().optional(),
+              sheet: z.string().optional(),
+              headerRow: z.number().int().positive().optional(),
+              dataStartRow: z.number().int().positive().optional(),
+              fieldColumns: z.record(z.string(), z.union([z.string(), z.number().int()])).optional(),
+              requiredFields: z.array(z.string()).optional(),
+              recordIdField: z.string().optional(),
+              templateType: z.string().optional(),
+              styleSourceRow: z.number().int().positive().optional(),
+              maxRows: z.number().int().nonnegative().optional(),
+              periodExpectations: z.array(z.record(z.string(), z.unknown())).optional(),
+              deliveryName: z.string().optional(),
+              formatPolicy: z.record(z.string(), z.unknown()).optional(),
+            }),
+          )
+          .default([]),
+        replace: z.boolean().default(false),
+        expectedDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      }),
+      outputSchema: ResultSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (input) =>
+      toolResult(
+        await invoke("prepare_delivery", prepareArgs(), {
+          stdin: JSON.stringify(input),
+        }),
+      ),
   );
 
   server.registerTool(
