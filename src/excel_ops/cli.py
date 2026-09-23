@@ -10,6 +10,7 @@ from pathlib import Path
 from .delivery import load_delivery_targets, run_delivery
 from .idempotency import IdempotencyOptions
 from .pipeline import run_pipeline
+from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .schema_drift import save_confirmed_mapping, write_drift_report
 from .workdir import (
     DEFAULT_STABILITY_WINDOW_SECONDS,
@@ -24,6 +25,30 @@ from .workdir import (
 
 def main(argv: Sequence[str] | None = None) -> None:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "prepare-delivery":
+        prepare = argparse.ArgumentParser(
+            description="Prepare one validated delivery-plan JSON from structured Agent intent"
+        )
+        prepare.parse_args(arguments[1:])
+        try:
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise PlanPreparationError("invalid_request", "request must be a JSON object")
+            report = prepare_delivery_plan(request)
+        except (json.JSONDecodeError, PlanPreparationError) as error:
+            report = {
+                "prepared": False,
+                "status": "blocked",
+                "error": {
+                    "code": getattr(error, "code", "invalid_request_json"),
+                    "message": str(error),
+                },
+            }
+            print(json.dumps(report, ensure_ascii=False))
+            sys.exit(1)
+        print(json.dumps(report, ensure_ascii=False))
+        return
+
     if arguments and arguments[0] == "deliver":
         deliver = argparse.ArgumentParser(
             description="Ingest, match, confirm, write a template copy, and verify the delivered file"

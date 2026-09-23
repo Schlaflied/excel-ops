@@ -37,8 +37,11 @@ By default the bridge runs `python -m excel_ops.cli`. `EXCEL_OPS_PYTHON` may poi
 | Tool | Mutation | Purpose |
 |---|---:|---|
 | `excel_ops.scan_workdir` | No | Classify files under explicitly authorized roots and report duplicates or uncertain versions. |
+| `excel_ops.prepare_delivery` | Plan file only | Turn explicit Agent selections into one validated, credential-free `delivery-plan.json`; return review items instead of guessing missing mappings. |
 | `excel_ops.plan_delivery` | No | Run `excel-ops deliver --dry-run` and return the proposed writes, review items, and blockers. |
 | `excel_ops.run_delivery` | Yes | Run an approved delivery, reread and verify its outputs, and return delivery evidence. |
+
+The intended Agent sequence is `scan_workdir → prepare_delivery → plan_delivery → explicit user approval → run_delivery`. Preparation accepts structured intent rather than natural language: the Host Agent selects inputs and supplies the target template, sheet, and field mapping. Missing business decisions return `needs_review` and no executable plan is written. Paths are confined to explicit authorized roots, existing plans are not overwritten by default, and a replacement requires the current SHA-256 digest.
 
 `run_delivery` requires `confirmed: true`. The caller must set it only after presenting the dry-run plan and obtaining explicit user approval. MCP annotations help a host display the distinction, but the required confirmation field is also validated by the server.
 
@@ -61,6 +64,7 @@ CLI startup, timeout, and external-signal termination failures are `environment_
 
 - stdout belongs exclusively to MCP JSON-RPC; diagnostics go to stderr.
 - Source files remain unchanged. Delivery follows the same staging, reread verification, and Manifest rules as direct CLI use.
+- `prepare_delivery` writes only the declared plan file. It never writes a workbook or bypasses the dry run.
 - Paths and workbooks stay local unless a separately implemented connector explicitly uses a remote platform.
 - This server does not implement Google Sheets, Dropbox, Feishu, WPS, or any other cloud connector.
 

@@ -24,7 +24,7 @@ VLOOKUP 令人头疼的地方从来不只是公式本身。真实表格中的名
 
 `$excel-agent` 是唯一面向用户的入口。Python CLI 仍作为 Agent 和自动化测试使用的内部确定性能力。
 
-支持 MCP 的 Agent 可以启动本地 `excel-ops-mcp` stdio 服务。它提供只读工作目录扫描、只读交付计划，以及必须显式确认的正式交付工具；所有表格业务判断仍由现有 Python 核心完成。见 [Agent MCP 服务](docs/mcp.zh-CN.md)。
+支持 MCP 的 Agent 可以启动本地 `excel-ops-mcp` stdio 服务。它提供工作目录扫描、经过校验的 delivery plan 准备、只读 dry run，以及必须显式确认的正式交付；所有表格业务判断仍由现有 Python 核心完成。见 [Agent MCP 服务](docs/mcp.zh-CN.md)。
 
 初期连接器的顺序是：本地 XLSX/CSV、本地云同步目录、Google Sheets、Dropbox API、飞书表格和 WPS 表格。云端凭据只应保存在用户环境中，不得写入项目或交付包。
 

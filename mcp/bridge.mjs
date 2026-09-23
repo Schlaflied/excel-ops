@@ -50,7 +50,9 @@ export function classifyCliResult(operation, exitCode, stdout, stderr, durationM
   }
 
   let status = "completed";
-  if (result?.dry_run === true) status = "planned";
+  if (result?.status === "prepared" || result?.status === "needs_review") {
+    status = result.status;
+  } else if (result?.dry_run === true) status = "planned";
   else if (result?.no_op === true) status = "no_op";
   else if (result?.delivered === true) status = "delivered";
 
@@ -141,6 +143,12 @@ export function runExcelOps(operation, args, options = {}) {
     child.stderr.on("data", (chunk) => {
       stderr = append(stderr, chunk);
     });
+    if (options.stdin !== undefined) {
+      child.stdin.on("error", (error) => {
+        fail("cli_stdin_failed", "Could not send the request to the Excel-Ops CLI.", error.message);
+      });
+      child.stdin.end(options.stdin);
+    }
     child.on("error", (error) => {
       fail(
         "cli_unavailable",
@@ -175,6 +183,10 @@ export function runExcelOps(operation, args, options = {}) {
       fail("cli_timeout", `Excel-Ops CLI exceeded the ${timeoutMs} ms timeout.`);
     }, timeoutMs);
   });
+}
+
+export function prepareArgs() {
+  return ["prepare-delivery"];
 }
 
 export function deliveryArgs(config, options = {}) {
