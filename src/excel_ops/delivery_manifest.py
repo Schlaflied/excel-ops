@@ -341,6 +341,26 @@ def read_delivery_manifest(output: str | Path) -> DeliveryManifest | None:
         return None
 
 
+def recorded_exports_are_current(outputs: Sequence[str | Path]) -> bool:
+    """Return whether every output has intact, in-scope exported siblings."""
+
+    for output in outputs:
+        workbook = Path(output).resolve()
+        manifest = read_delivery_manifest(workbook)
+        if manifest is None or not manifest.exports:
+            return False
+        for item in manifest.exports:
+            try:
+                artifact = Path(str(item["output"])).resolve()
+                artifact.relative_to(workbook.parent)
+                digest = str(item["digest"])
+            except (KeyError, OSError, ValueError, TypeError):
+                return False
+            if not artifact.is_file() or file_content_digest(artifact) != digest:
+                return False
+    return True
+
+
 # --------------------------------------------------------------------------- #
 # Building a Manifest from a completed run
 # --------------------------------------------------------------------------- #

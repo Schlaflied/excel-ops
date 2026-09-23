@@ -43,6 +43,7 @@ from .delivery_manifest import (
     DeliveryManifest,
     build_delivery_manifests,
     read_delivery_manifest,
+    recorded_exports_are_current,
     write_delivery_manifests,
 )
 from .delivery_verification import (
@@ -58,6 +59,7 @@ from .idempotency import (
     CHANGED,
     FAILED,
     NO_OP,
+    RETRY,
     STARTED,
     SUCCEEDED,
     ConnectorTarget,
@@ -483,7 +485,15 @@ def run_delivery(
     project_recipe, recipe_failure = _load_recipe(recipe_path)
     guard = _RunGuard.of(inputs, targets, delivery, project_recipe, decisions, idempotency)
     if guard is not None and guard.decision.no_op and not dry_run:
-        return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
+        outputs = tuple(_delivery_path(target, delivery) for target in targets)
+        if artifact_hook is None or recorded_exports_are_current(outputs):
+            return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
+        guard.decision = RunDecision(
+            RETRY,
+            "recorded_export_missing_or_changed",
+            guard.decision.fingerprint,
+            guard.previous,
+        )
 
     records, record_inputs, ingest_failures = _ingest(inputs)
     failures.extend(ingest_failures)

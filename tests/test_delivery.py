@@ -1144,6 +1144,43 @@ def test_an_idempotent_rerun_short_circuits_to_a_no_op(tmp_path: Path, monkeypat
     _assert_originals_untouched(scenario)
 
 
+def test_a_missing_recorded_export_bypasses_no_op_and_is_regenerated(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    def attach_csv(run, manifests):
+        recovered = []
+        for manifest in manifests:
+            sibling = Path(manifest.output).with_suffix(".csv")
+            sibling.write_text("record_id\nsynthetic\n", encoding="utf-8")
+            evidence = {
+                "actual_format": "csv",
+                "output": str(sibling),
+                "sheets": [scenario["targets"][0].mapping.sheet],
+                "warnings": ["csv_drops_workbook_features"],
+                "digest": file_content_digest(sibling),
+                "verification": "passed",
+                "summary": "verified output",
+            }
+            recovered.append(replace(manifest, exports=(evidence,)))
+        return tuple(recovered)
+
+    first = _run(scenario, idempotency=options, artifact_hook=attach_csv)
+    assert first.delivered is True
+    missing = Path(first.manifests[0].exports[0]["output"])
+    missing.unlink()
+
+    retried = _run(scenario, idempotency=options, artifact_hook=attach_csv)
+
+    assert retried.no_op is False
+    assert retried.run_decision.decision == RETRY
+    assert retried.run_decision.reason == "recorded_export_missing_or_changed"
+    assert retried.manifest_paths
+    assert missing.is_file()
+    assert retried.manifests[0].exports
+    assert _run(scenario, idempotency=options, artifact_hook=attach_csv).no_op is True
+
+
 def test_a_changed_input_does_not_short_circuit(tmp_path: Path):
     scenario = _scenario(tmp_path)
     options = _idempotent()

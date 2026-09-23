@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -112,7 +111,9 @@ def _export_pdf_artifact(
     chosen = sheets if requested is None else tuple(str(item) for item in requested)
     output = source.with_suffix(".pdf")
     try:
-        if os.name == "nt":
+        if _is_windows():
+            if requested is None:
+                chosen = _visible_sheet_names(source)
             export_pdf_with_excel(source, output, sheets=chosen)
             summary = "rendered by local Microsoft Excel"
         else:
@@ -120,7 +121,15 @@ def _export_pdf_artifact(
             summary = "rendered by local LibreOffice"
     except (ExcelPdfExportError, PdfExportError) as error:
         raise DeliveryExportError(str(error)) from error
-    return _artifact("pdf", source, output, chosen, ("pdf_is_not_editable",), summary)
+    return _artifact(
+        "pdf",
+        source,
+        output,
+        chosen,
+        ("pdf_is_not_editable", "pdf_layout_not_verified"),
+        summary,
+        verification="unverified",
+    )
 
 
 def _artifact(
@@ -130,6 +139,7 @@ def _artifact(
     sheets: Sequence[str],
     warnings: Sequence[str],
     summary: str = "verified output",
+    verification: str = "passed",
 ) -> ExportArtifact:
     """Build evidence only after checking suffix and persisted content."""
 
@@ -144,6 +154,7 @@ def _artifact(
         tuple(sheets),
         tuple(warnings),
         file_content_digest(output),
+        verification=verification,
         summary=summary,
     )
 
@@ -156,3 +167,25 @@ def _sheet_names(source: Path) -> tuple[str, ...]:
         return tuple(workbook.sheetnames)
     finally:
         workbook.close()
+
+
+def _visible_sheet_names(source: Path) -> tuple[str, ...]:
+    """Return the Windows PDF `all` scope accepted by native Excel."""
+
+    workbook = load_workbook(source, read_only=True)
+    try:
+        return tuple(
+            name
+            for name in workbook.sheetnames
+            if getattr(workbook[name], "sheet_state", "visible") == "visible"
+        )
+    finally:
+        workbook.close()
+
+
+def _is_windows() -> bool:
+    """Keep platform selection patchable without mutating Python's global os module."""
+
+    import os
+
+    return os.name == "nt"

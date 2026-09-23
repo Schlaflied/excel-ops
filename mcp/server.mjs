@@ -93,8 +93,7 @@ export function createExcelOpsServer(options = {}) {
             pdf: z
               .object({ sheets: z.union([z.literal("all"), z.array(z.string().min(1)).min(1)]) })
               .optional(),
-          })
-          .optional(),
+          }),
         recipe: z.string().min(1).optional(),
         targets: z
           .array(
