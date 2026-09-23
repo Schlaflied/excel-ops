@@ -47,6 +47,7 @@ def export_pdf(
             result = runner(
                 [
                     executable,
+                    f"-env:UserInstallation={(temporary / 'profile').as_uri()}",
                     "--headless",
                     "--convert-to",
                     "pdf",
@@ -105,16 +106,20 @@ def _validated_sheets(source: Path, sheets: Sequence[str] | None) -> tuple[str, 
 
 
 def _prepare_workbook(source: Path, destination: Path, selected: Sequence[str]) -> None:
-    """Create a temporary workbook containing only visible selected sheets."""
+    """Expose selected sheets, retaining hidden worksheets needed by formulas."""
 
     workbook = load_workbook(source)
     try:
-        for worksheet in list(workbook.worksheets):
-            if worksheet.title not in selected:
-                workbook.remove(worksheet)
+        worksheet_names = {worksheet.title for worksheet in workbook.worksheets}
+        for name in list(workbook.sheetnames):
+            sheet = workbook[name]
+            if name in selected:
+                sheet.sheet_state = "visible"
+            elif name in worksheet_names:
+                sheet.sheet_state = "hidden"
             else:
-                worksheet.sheet_state = "visible"
-        workbook.active = 0
+                workbook.remove(sheet)
+        workbook.active = workbook.sheetnames.index(selected[0])
         workbook.save(destination)
     finally:
         workbook.close()
