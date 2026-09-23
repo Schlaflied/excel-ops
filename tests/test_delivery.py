@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -1010,6 +1011,10 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
     assert {item["actual_format"] for item in report["exports"]} == {"xlsx", "csv"}
     manifest = json.loads(Path(report["manifest_paths"][0]).read_text(encoding="utf-8"))
     assert {item["actual_format"] for item in manifest["exports"]} == {"xlsx", "csv"}
+    readable = Path(report["manifest_paths"][0]).with_suffix(".txt").read_text(encoding="utf-8")
+    assert "digest=" in readable
+    assert "verification=passed" in readable
+    assert "summary=verified output" in readable
     _assert_originals_untouched(scenario)
 
 
@@ -1391,15 +1396,40 @@ def test_an_artifact_export_failure_is_recorded_as_failed_and_the_next_run_retri
     assert record.status == FAILED
     assert record.successful is False
 
+    base_manifest_paths = tuple(
+        Path(item.delivery_path).with_suffix(".xlsx.manifest.json")
+        for item in failed.targets
+        if item.delivery_path
+    )
+    assert base_manifest_paths
+    assert all(path.is_file() for path in base_manifest_paths)
+
+    evidence = {
+        "actual_format": "csv",
+        "output": "recovered.csv",
+        "sheets": ["北区"],
+        "warnings": [],
+        "digest": "sha256:recovered",
+        "verification": "passed",
+        "summary": "verified output",
+    }
+
+    def attach_recovered_export(run, manifests):
+        return tuple(replace(manifest, exports=(evidence,)) for manifest in manifests)
+
     retried = _run(
         scenario,
         idempotency=options,
-        artifact_hook=lambda run, manifests: manifests,
+        artifact_hook=attach_recovered_export,
     )
 
     assert retried.no_op is False
     assert retried.run_decision.decision == RETRY
     assert retried.delivered is True
+    assert retried.manifest_paths
+    assert retried.manifests[0].exports == (evidence,)
+    persisted = json.loads(Path(retried.manifest_paths[0]).read_text(encoding="utf-8"))
+    assert persisted["exports"] == [evidence]
     assert _run(scenario, idempotency=options).no_op is True
 
 

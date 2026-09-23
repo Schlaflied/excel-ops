@@ -42,6 +42,7 @@ from .cells import column_number, is_merged_non_anchor, is_protected_formula_val
 from .delivery_manifest import (
     DeliveryManifest,
     build_delivery_manifests,
+    read_delivery_manifest,
     write_delivery_manifests,
 )
 from .delivery_verification import (
@@ -585,6 +586,14 @@ def run_delivery(
         },
         record_input_paths=record_inputs,
     )
+    if not manifests and guard is not None and guard.decision.decision == "retry":
+        manifests = tuple(
+            manifest
+            for outcome in target_outcomes
+            if outcome.delivery_path
+            for manifest in (read_delivery_manifest(outcome.delivery_path),)
+            if manifest is not None
+        )
     if artifact_hook is not None and delivered:
         try:
             manifests = artifact_hook(run, manifests)
@@ -595,6 +604,17 @@ def run_delivery(
                 "Correct the export scope or install a supported PDF renderer, then re-run.",
             )
             failures = [*failures, artifact_failure]
+            if write_manifest and manifests:
+                try:
+                    write_delivery_manifests(manifests)
+                except (OSError, ValueError) as manifest_error:
+                    failures.append(
+                        DeliveryFailure(
+                            "manifest_write_failed",
+                            f"The recovery manifest could not be written: {manifest_error}",
+                            "Check the delivery directory's permissions and re-run.",
+                        )
+                    )
             if guard is not None:
                 guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
             return replace(

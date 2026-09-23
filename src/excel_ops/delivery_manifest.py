@@ -270,6 +270,77 @@ class DeliveryManifest:
         return output.with_suffix(output.suffix + READABLE_SUFFIX)
 
 
+def read_delivery_manifest(output: str | Path) -> DeliveryManifest | None:
+    """Load valid persisted evidence for ``output`` or fail closed.
+
+    Recovery is used only after an earlier format export failed.  The sibling
+    JSON must still name and hash the exact workbook on disk; malformed or
+    stale evidence is ignored so it can never bless a different file.
+    """
+
+    workbook = Path(output).resolve()
+    manifest_path = workbook.with_suffix(workbook.suffix + MANIFEST_SUFFIX)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if Path(str(payload["output"])).resolve() != workbook:
+            return None
+        if payload["output_hash"] != file_content_digest(workbook):
+            return None
+        verification = payload["verification"]
+        tabs = payload.get("tabs", {})
+        return DeliveryManifest(
+            output=str(workbook),
+            output_name=str(payload["output_name"]),
+            output_hash=str(payload["output_hash"]),
+            destination_key=str(payload["destination_key"]),
+            template=str(payload["template"]),
+            template_version=str(payload["template_version"]),
+            recipe_version=str(payload["recipe_version"]),
+            verification=ManifestVerification(
+                status=str(verification["status"]),
+                findings=int(verification.get("findings", 0)),
+                codes=tuple(verification.get("codes", ())),
+                severities=dict(verification.get("severities", {})),
+                report_path=verification.get("report_path"),
+            ),
+            sources=tuple(
+                ManifestSource(
+                    file=str(item["file"]),
+                    path=str(item["path"]),
+                    hash=str(item["hash"]),
+                    records=int(item["records"]),
+                    written=int(item["written"]),
+                    statuses=dict(item.get("statuses", {})),
+                    origins=tuple(item.get("origins", ())),
+                )
+                for item in payload.get("sources", ())
+            ),
+            tabs=tuple(
+                ManifestTab(
+                    sheet=str(item["sheet"]),
+                    written=int(item["written"]),
+                    rows=int(item["rows"]),
+                    sources=dict(item.get("sources", {})),
+                )
+                for item in tabs.values()
+            ),
+            period_start=payload.get("period_start"),
+            period_end=payload.get("period_end"),
+            period_display_text=payload.get("period_display_text"),
+            recipe_path=payload.get("recipe_path"),
+            run_counts=dict(payload.get("run_counts", {})),
+            target_counts=dict(payload.get("target_counts", {})),
+            discrepancies=tuple(payload.get("discrepancies", ())),
+            generated_at=str(payload.get("generated_at", "")),
+            run_fingerprint=payload.get("run_fingerprint"),
+            format=str(payload.get("format", MANIFEST_FORMAT)),
+            format_policy=dict(payload.get("format_policy", {})),
+            exports=tuple(payload.get("exports", ())),
+        )
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # Building a Manifest from a completed run
 # --------------------------------------------------------------------------- #
@@ -688,7 +759,10 @@ def format_manifest(manifest: DeliveryManifest) -> str:
             lines.append(
                 f"    - {item.get('actual_format')}: {Path(str(item.get('output'))).name}, "
                 f"sheets={','.join(item.get('sheets', ())) or 'none'}, "
-                f"warnings={','.join(item.get('warnings', ())) or 'none'}"
+                f"warnings={','.join(item.get('warnings', ())) or 'none'}, "
+                f"digest={item.get('digest') or 'missing'}, "
+                f"verification={item.get('verification') or 'unknown'}, "
+                f"summary={item.get('summary') or 'none'}"
             )
     lines.append(
         "  note             counts, hashes and metadata only; no cell value is recorded here"
