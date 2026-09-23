@@ -1285,6 +1285,26 @@ def test_an_empty_target_does_not_prevent_an_unchanged_no_op(tmp_path: Path):
     assert second.no_op is True
 
 
+def test_export_hook_fails_closed_when_existing_workbook_has_no_manifest(tmp_path: Path):
+    scenario = _scenario(tmp_path)
+    first = _run(scenario, write_manifest=False)
+    assert first.delivered is True
+    assert all(not Path(path).is_file() for path in first.manifest_paths)
+    hook_called = False
+
+    def unsafe_export(run, manifests):
+        nonlocal hook_called
+        hook_called = True
+        return manifests
+
+    second = _run(scenario, artifact_hook=unsafe_export)
+
+    assert second.delivered is False
+    assert hook_called is False
+    assert [item.code for item in second.failures] == ["manifest_recovery_failed"]
+    assert second.manifests == ()
+
+
 def test_cli_rejects_run_state_without_manifest():
     from excel_ops.cli import main
 

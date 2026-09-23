@@ -621,6 +621,31 @@ def run_delivery(
         )
         manifests = (*manifests, *recovered)
     if artifact_hook is not None and delivered:
+        manifest_outputs = {Path(manifest.output).resolve() for manifest in manifests}
+        missing_manifests = tuple(
+            outcome.delivery_path
+            for outcome in target_outcomes
+            if outcome.delivery_path
+            and Path(outcome.delivery_path).is_file()
+            and Path(outcome.delivery_path).resolve() not in manifest_outputs
+        )
+        if missing_manifests:
+            failures.append(
+                DeliveryFailure(
+                    "manifest_recovery_failed",
+                    "A Manifest could not be recovered for an existing workbook.",
+                    "Restore or rebuild the Manifest, then re-run the delivery.",
+                )
+            )
+            if guard is not None:
+                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
+            return replace(
+                run,
+                delivered=False,
+                failures=tuple(failures),
+                manifests=(),
+            )
+    if artifact_hook is not None and delivered:
         try:
             manifests = artifact_hook(run, manifests)
         except (OSError, ValueError) as error:
