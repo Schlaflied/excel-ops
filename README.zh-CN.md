@@ -137,9 +137,13 @@ excel-ops deliver delivery-plan.json --run-state --task-key weekly-north
 
 导入与版式识别（[#1](https://github.com/Schlaflied/excel-ops/issues/1)）、类型与地区推断（[#24](https://github.com/Schlaflied/excel-ops/issues/24)）、Schema Drift 检测（[#10](https://github.com/Schlaflied/excel-ops/issues/10)）、严格匹配与去重（[#2](https://github.com/Schlaflied/excel-ops/issues/2)）、离线复核包（[#18](https://github.com/Schlaflied/excel-ops/issues/18)）、安全模板写回（[#3](https://github.com/Schlaflied/excel-ops/issues/3)）、独立交付验证（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）、业务周期解析与日期刷新（[#16](https://github.com/Schlaflied/excel-ops/issues/16)、[#9](https://github.com/Schlaflied/excel-ops/issues/9)）、安全文件命名（[#17](https://github.com/Schlaflied/excel-ops/issues/17)）、静态公式完整性检查（[#11](https://github.com/Schlaflied/excel-ops/issues/11)）、批量歧义确认与 Recipe（[#26](https://github.com/Schlaflied/excel-ops/issues/26)）、工作目录扫描（[#15](https://github.com/Schlaflied/excel-ops/issues/15)）、幂等执行（[#19](https://github.com/Schlaflied/excel-ops/issues/19)）、交付 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、语义化数字与币种格式（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、把上述模块串成一次可验证交付运行的 `run_delivery(...)`（[#46](https://github.com/Schlaflied/excel-ops/issues/46)）、跨平台 CI（[#50](https://github.com/Schlaflied/excel-ops/issues/50)），以及最新完成的——由 Codex 实现、只转发给同一套 Python CLI、不重写任何业务逻辑的 JS/TS Agent 编排层（MCP 服务，[#53](https://github.com/Schlaflied/excel-ops/issues/53)），和在它之上新增的、供 Agent 调用的 delivery plan 准备入口（[#59](https://github.com/Schlaflied/excel-ops/issues/59)）。
 
+### 推进中
+
+自然语言公式生成（[#25](https://github.com/Schlaflied/excel-ops/issues/25)）。
+
 ### 仍待定 / 尚未开始
 
-自然语言汇总与透视表（[#6](https://github.com/Schlaflied/excel-ops/issues/6)，属于 Phase 3）、条件格式与异常高亮（[#7](https://github.com/Schlaflied/excel-ops/issues/7)）、批量生成名牌/标签（[#8](https://github.com/Schlaflied/excel-ops/issues/8)）、版本差异与审核包（[#12](https://github.com/Schlaflied/excel-ops/issues/12)）、工作簿健康检查与可审核自动修复（[#13](https://github.com/Schlaflied/excel-ops/issues/13)）、按岗位的 Role Packs（[#14](https://github.com/Schlaflied/excel-ops/issues/14)）、文件到达触发的无人值守流程（[#21](https://github.com/Schlaflied/excel-ops/issues/21)）、多格式导出（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）、自然语言公式生成（[#25](https://github.com/Schlaflied/excel-ops/issues/25)），以及 Phase 2 全部云连接器和 Phase 3 剩余内容（安全 join/合并、多 Tab 交付分组、可重复自动化）。
+自然语言汇总与透视表（[#6](https://github.com/Schlaflied/excel-ops/issues/6)，属于 Phase 3）、条件格式与异常高亮（[#7](https://github.com/Schlaflied/excel-ops/issues/7)）、批量生成名牌/标签（[#8](https://github.com/Schlaflied/excel-ops/issues/8)）、版本差异与审核包（[#12](https://github.com/Schlaflied/excel-ops/issues/12)）、工作簿健康检查与可审核自动修复（[#13](https://github.com/Schlaflied/excel-ops/issues/13)）、按岗位的 Role Packs（[#14](https://github.com/Schlaflied/excel-ops/issues/14)）、文件到达触发的无人值守流程（[#21](https://github.com/Schlaflied/excel-ops/issues/21)），以及 Phase 2 全部云连接器和 Phase 3 剩余内容（安全 join/合并、多 Tab 交付分组、可重复自动化）。
 
 ## 当前能力
 

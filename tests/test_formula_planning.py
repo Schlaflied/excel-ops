@@ -29,7 +29,7 @@ def test_legacy_lookup_uses_index_match(version):
 
     assert plan.function == "INDEX/MATCH"
     assert "XLOOKUP" not in plan.value
-    assert plan.value.startswith("=IFERROR(INDEX(")
+    assert plan.value.startswith("=IFNA(INDEX(")
 
 
 def test_conditional_sum_is_cross_sheet_and_compatible():
@@ -40,6 +40,56 @@ def test_conditional_sum_is_cross_sheet_and_compatible():
 
     assert plan.value == "=SUMIFS('Time Data'!D2:D100,'Time Data'!A2:A100,A2)"
     assert plan.compatibility_strategy == "SUMIFS is supported by all target versions"
+
+
+def test_conditional_sum_accepts_equal_two_dimensional_ranges():
+    plan = plan_formula(
+        ConditionalSumFormulaSpec(
+            "Total approved values.", "A2", "Data", "a2:$b$10", "D2:E10"
+        ),
+        target_excel_version="365",
+    )
+
+    assert plan.value == "=SUMIFS('Data'!D2:E10,'Data'!A2:$B$10,A2)"
+
+
+def test_conditional_sum_rejects_mismatched_shapes():
+    with pytest.raises(FormulaPlanError, match="same dimensions"):
+        plan_formula(
+            ConditionalSumFormulaSpec(
+                "Total approved values.", "A2", "Data", "A2:B10", "D2:D10"
+            ),
+            target_excel_version="365",
+        )
+
+
+def test_horizontal_lookup_allows_multiple_return_rows():
+    plan = plan_formula(
+        LookupFormulaSpec("Find a month.", "A2", "Data", "B1:M1", "B2:M4"),
+        target_excel_version="365",
+    )
+
+    assert plan.function == "XLOOKUP"
+
+
+@pytest.mark.parametrize(
+    ("lookup_range", "return_range", "message"),
+    [
+        ("A2:B10", "C2:C10", "single row or column"),
+        ("A2:A10", "C2:C9", "same number of rows"),
+        ("B1:M1", "B2:L4", "same number of columns"),
+    ],
+)
+def test_lookup_rejects_ambiguous_or_mismatched_shapes(
+    lookup_range, return_range, message
+):
+    with pytest.raises(FormulaPlanError, match=message):
+        plan_formula(
+            LookupFormulaSpec(
+                "Find a value.", "A2", "Data", lookup_range, return_range
+            ),
+            target_excel_version="365",
+        )
 
 
 def test_date_plan_uses_explicit_month_offset():

@@ -11,6 +11,9 @@ ExcelVersion = Literal["2016", "2019", "2021", "365"]
 OutputMode = Literal["formula", "static"]
 _A1 = re.compile(r"\$?[A-Z]{1,3}\$?[1-9][0-9]*")
 _RANGE = re.compile(r"\$?[A-Z]{1,3}\$?[1-9][0-9]*:\$?[A-Z]{1,3}\$?[1-9][0-9]*")
+_RANGE_PARTS = re.compile(
+    r"\$?([A-Z]{1,3})\$?([1-9][0-9]*):\$?([A-Z]{1,3})\$?([1-9][0-9]*)"
+)
 _MISSING = object()
 
 
@@ -115,6 +118,7 @@ def _formula(spec: FormulaSpec, version: ExcelVersion) -> tuple[str, str, str]:
         lookup_cell = _cell(spec.lookup_cell, "lookup_cell")
         lookup_range = _range(spec.lookup_range, "lookup_range")
         return_range = _range(spec.return_range, "return_range")
+        _require_lookup_shape(lookup_range, return_range)
         sheet = _sheet(spec.source_sheet)
         if version in {"2021", "365"}:
             return (
@@ -123,7 +127,7 @@ def _formula(spec: FormulaSpec, version: ExcelVersion) -> tuple[str, str, str]:
                 "XLOOKUP is available in the selected Excel version",
             )
         return (
-            f'=IFERROR(INDEX({sheet}!{return_range},MATCH({lookup_cell},{sheet}!{lookup_range},0)),"")',
+            f'=IFNA(INDEX({sheet}!{return_range},MATCH({lookup_cell},{sheet}!{lookup_range},0)),"")',
             "INDEX/MATCH",
             "INDEX/MATCH fallback avoids XLOOKUP on legacy Excel",
         )
@@ -131,6 +135,11 @@ def _formula(spec: FormulaSpec, version: ExcelVersion) -> tuple[str, str, str]:
         criteria_cell = _cell(spec.criteria_cell, "criteria_cell")
         criteria_range = _range(spec.criteria_range, "criteria_range")
         sum_range = _range(spec.sum_range, "sum_range")
+        _require_same_shape(
+            criteria_range,
+            sum_range,
+            "criteria_range and sum_range",
+        )
         sheet = _sheet(spec.source_sheet)
         return (
             f"=SUMIFS({sheet}!{sum_range},{sheet}!{criteria_range},{criteria_cell})",
@@ -171,6 +180,44 @@ def _range(value: str, field: str) -> str:
     if not _RANGE.fullmatch(normalized):
         raise FormulaPlanError(f"{field} must be one bounded A1 range")
     return normalized
+
+
+def _column_index(letters: str) -> int:
+    index = 0
+    for character in letters:
+        index = index * 26 + ord(character) - ord("A") + 1
+    return index
+
+
+def _shape(range_ref: str) -> tuple[int, int]:
+    match = _RANGE_PARTS.fullmatch(range_ref)
+    if match is None:  # pragma: no cover - callers normalize through _range
+        raise FormulaPlanError("range must be one bounded A1 range")
+    first_column, first_row, last_column, last_row = match.groups()
+    return (
+        abs(int(last_row) - int(first_row)) + 1,
+        abs(_column_index(last_column) - _column_index(first_column)) + 1,
+    )
+
+
+def _require_same_shape(first: str, second: str, fields: str) -> None:
+    if _shape(first) != _shape(second):
+        raise FormulaPlanError(f"{fields} must have the same dimensions")
+
+
+def _require_lookup_shape(lookup_range: str, return_range: str) -> None:
+    lookup_rows, lookup_columns = _shape(lookup_range)
+    return_rows, return_columns = _shape(return_range)
+    if lookup_rows != 1 and lookup_columns != 1:
+        raise FormulaPlanError("lookup_range must be a single row or column")
+    if lookup_rows == 1 and return_columns != lookup_columns:
+        raise FormulaPlanError(
+            "lookup_range and return_range must have the same number of columns"
+        )
+    if lookup_columns == 1 and return_rows != lookup_rows:
+        raise FormulaPlanError(
+            "lookup_range and return_range must have the same number of rows"
+        )
 
 
 def _sheet(value: str) -> str:
