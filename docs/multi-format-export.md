@@ -2,7 +2,7 @@
 
 # Multi-format delivery export contract
 
-This document defines the first implementation boundary for [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22). It is a contract and design slice for the Draft PR; it does not claim that CSV or PDF export is implemented yet.
+This document defines the implemented multi-format delivery boundary for [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22). CSV and PDF adapters consume the verified XLSX delivery; they do not repeat matching or workbook business logic.
 
 ## User-facing request
 
@@ -63,6 +63,6 @@ The delivery Manifest should record an `exports` entry per artifact containing t
 2. Add an XLSX pass-through artifact and shared export result/Manifest shape.
 3. Add explicit single-sheet and one-file-per-sheet CSV export with tests.
 4. Add PDF export behind a capability check and page-level verification.
-5. Add MCP/CLI exposure, examples, and end-to-end tests for single, multi-format, multi-sheet CSV, and PDF flows.
+5. CLI/MCP exposure, examples, and end-to-end tests are integrated through the existing confirmed `run_delivery` tool.
 
-This Draft PR intentionally starts with the stable contract so subsequent adapter work can be reviewed independently. It references Issue #22 without closing it.
+`prepare_delivery` accepts the `delivery` object above. `plan_delivery` returns an `export_plan`; after explicit approval, `run_delivery` writes and verifies XLSX first, creates the selected siblings, and adds an `exports` array to the delivery Manifest. Each entry records actual format, source workbook, included sheets, content digest, verification status, loss warnings, and a renderer summary. See [`examples/multi-format-delivery.json`](../examples/multi-format-delivery.json).

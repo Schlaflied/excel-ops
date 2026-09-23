@@ -193,6 +193,8 @@ class DeliveryManifest:
     format: str = MANIFEST_FORMAT
     #: Applied semantic display policy. Contains rules only, never cell values.
     format_policy: Mapping[str, Any] = field(default_factory=dict)
+    #: Multi-format siblings generated from this verified workbook.
+    exports: tuple[Mapping[str, Any], ...] = ()
 
     @property
     def accepted(self) -> int:
@@ -253,6 +255,7 @@ class DeliveryManifest:
             "reconciled": self.reconciled,
             "discrepancies": list(self.discrepancies),
             "run_fingerprint": self.run_fingerprint,
+            "exports": [dict(item) for item in self.exports],
         }
 
     def to_json(self) -> str:
@@ -679,6 +682,14 @@ def format_manifest(manifest: DeliveryManifest) -> str:
         lines.append(f"  DISCREPANCIES    {', '.join(manifest.discrepancies)}")
     else:
         lines.append("  reconciled       yes (run counters match the persisted file)")
+    if manifest.exports:
+        lines.append("  exports")
+        for item in manifest.exports:
+            lines.append(
+                f"    - {item.get('actual_format')}: {Path(str(item.get('output'))).name}, "
+                f"sheets={','.join(item.get('sheets', ())) or 'none'}, "
+                f"warnings={','.join(item.get('warnings', ())) or 'none'}"
+            )
     lines.append(
         "  note             counts, hashes and metadata only; no cell value is recorded here"
     )

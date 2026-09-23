@@ -39,7 +39,7 @@ By default the bridge runs `python -m excel_ops.cli`. `EXCEL_OPS_PYTHON` may poi
 | `excel_ops.scan_workdir` | No | Classify files under explicitly authorized roots and report duplicates or uncertain versions. |
 | `excel_ops.prepare_delivery` | Plan file only | Write the caller-declared plan file from explicit Agent selections at `planPath`; return review items instead of guessing missing mappings. |
 | `excel_ops.plan_delivery` | No | Run `excel-ops deliver --dry-run` and return the proposed writes, review items, and blockers. |
-| `excel_ops.run_delivery` | Yes | Run an approved delivery, reread and verify its outputs, and return delivery evidence. |
+| `excel_ops.run_delivery` | Yes | Run an approved delivery, verify XLSX, generate selected XLSX/CSV/PDF artifacts, and return Manifest evidence. |
 
 The intended Agent sequence is `scan_workdir → prepare_delivery → plan_delivery → explicit user approval → run_delivery`. Preparation accepts structured intent rather than natural language: the Host Agent selects inputs and supplies the target template, sheet, and field mapping. Missing business decisions return `needs_review` and no executable plan is written. Paths are confined to explicit authorized roots, existing plans are not overwritten by default, and a replacement requires the current SHA-256 digest.
 

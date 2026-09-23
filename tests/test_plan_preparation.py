@@ -47,6 +47,7 @@ def _scenario(tmp_path: Path) -> dict:
 
 def test_prepare_writes_one_valid_plan_without_touching_workbooks(tmp_path: Path):
     request = _scenario(tmp_path)
+    request["delivery"] = {"formats": ["xlsx", "csv"], "csv": {"mode": "one-file-per-sheet"}}
     template = tmp_path / "模板.xlsx"
     before = template.read_bytes()
 
@@ -60,6 +61,7 @@ def test_prepare_writes_one_valid_plan_without_touching_workbooks(tmp_path: Path
     assert result["plan_digest"] == hashlib.sha256(plan.read_bytes()).hexdigest()
     assert len(targets) == 1
     assert options["inputs"] == [tmp_path / "来源.csv"]
+    assert options["export_formats"] == ("xlsx", "csv")
     assert template.read_bytes() == before
     assert not (tmp_path / "delivery").exists()
 

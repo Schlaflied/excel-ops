@@ -231,6 +231,7 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
       directory: "work",
       planPath: "delivery-plan.json",
       inputs: ["source.csv"],
+      delivery: { formats: ["xlsx", "csv"], csv: { mode: "one-file-per-sheet" } },
       targets: [
         {
           key: "North",
@@ -253,6 +254,7 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
         stagingDir: "staging",
         deliveryDir: "delivery",
         confidenceThreshold: 0.85,
+        delivery: { formats: ["xlsx", "csv"], csv: { mode: "one-file-per-sheet" } },
         targets: [
           {
             key: "North",

@@ -4,10 +4,12 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 from .delivery import load_delivery_targets, run_delivery
+from .delivery_exports import export_delivery_artifacts
 from .idempotency import IdempotencyOptions
 from .pipeline import run_pipeline
 from .plan_preparation import PlanPreparationError, prepare_delivery_plan
@@ -94,22 +96,60 @@ def main(argv: Sequence[str] | None = None) -> None:
         # Format selection is validated at plan-load time.  Export adapters
         # consume this contract in the export stage; the legacy XLSX delivery
         # runner must not receive these future-only options.
-        options.pop("export_formats", None)
-        options.pop("export_selection", None)
+        export_formats = options.pop("export_formats")
+        export_selection = options.pop("export_selection")
         if args.run_state is not None:
             options["idempotency"] = IdempotencyOptions(
                 state_path=args.run_state or None,
                 task_key=args.task_key,
                 template_profile_version=args.template_profile_version,
             )
+        attached_exports = []
+
+        def attach_exports(run, manifests):
+            source_workbooks = tuple(
+                item.delivery_path for item in run.targets if item.delivery_path
+            )
+            exports_by_source = {
+                path: export_delivery_artifacts(
+                    path, formats=export_formats, selection=export_selection
+                )
+                for path in source_workbooks
+            }
+            attached_exports.extend(
+                artifact
+                for artifacts in exports_by_source.values()
+                for artifact in artifacts
+            )
+            return tuple(
+                replace(
+                    manifest,
+                    exports=tuple(
+                        item.to_dict() for item in exports_by_source.get(manifest.output, ())
+                    ),
+                )
+                for manifest in manifests
+            )
+
         result = run_delivery(
             inputs,
             targets,
             dry_run=args.dry_run,
             write_manifest=not args.no_manifest,
+            artifact_hook=attach_exports if not args.dry_run else None,
             **options,
         )
         report = result.to_dict()
+        report["export_selection"] = export_selection
+        report["exports"] = []
+        if args.dry_run:
+            report["export_plan"] = {
+                "formats": list(export_formats),
+                "selection": export_selection,
+                "source_workbooks": [item.delivery_path for item in result.plan.targets],
+            }
+        elif result.delivered:
+            report["exports"] = [artifact.to_dict() for artifact in attached_exports]
         if args.result:
             Path(args.result).write_text(
                 json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
@@ -117,7 +157,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(json.dumps(report, ensure_ascii=False, default=str))
         # A no-op is a success: the declared delivery is already in place and
         # nothing changed, so there is nothing to deliver and nothing failed.
-        if result.failures or (not args.dry_run and not result.delivered and not result.no_op):
+        if report["failures"] or (
+            not args.dry_run and not report["delivered"] and not result.no_op
+        ):
             sys.exit(1)
         return
 

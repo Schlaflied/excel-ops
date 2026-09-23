@@ -2,7 +2,7 @@
 
 # 多格式交付导出契约
 
-本文定义 [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 的首个实现边界。当前 Draft PR 先提交契约和设计切片，不声称 CSV 或 PDF 导出已经实现。
+本文定义 [Issue #22](https://github.com/Schlaflied/excel-ops/issues/22) 已实现的多格式交付边界。CSV 与 PDF adapter 只消费已经验证的 XLSX，不重复执行匹配或工作簿业务逻辑。
 
 ## 用户请求
 
@@ -47,6 +47,6 @@ Manifest 为每个导出工件记录格式、来源工作簿、包含的 Sheet�
 2. 增加 XLSX 直通工件和共享导出结果/Manifest 结构；
 3. 增加显式单 Sheet 与逐 Sheet CSV 导出及测试；
 4. 在能力检查后增加 PDF 导出和分页验证；
-5. 增加 CLI/MCP 暴露、示例以及单格式、多格式、多 Sheet CSV 和 PDF 端到端测试。
+5. CLI/MCP 暴露、示例及端到端测试已通过现有、受确认保护的 `run_delivery` 工具接入。
 
-本 Draft PR 先固定稳定契约，后续适配器可以独立审查。它只引用 Issue #22，不关闭该 Issue。
+`prepare_delivery` 接受上面的 `delivery` 对象；`plan_delivery` 返回 `export_plan`；用户明确批准后，`run_delivery` 先写入并验证 XLSX，再生成所选格式，并在交付 Manifest 中写入 `exports` 数组。每项包含实际格式、来源工作簿、Sheet 范围、内容摘要、验证状态、能力损失警告和 renderer 摘要。见 [`examples/multi-format-delivery.json`](../examples/multi-format-delivery.json)。

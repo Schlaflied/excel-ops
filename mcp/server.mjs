@@ -81,6 +81,20 @@ export function createExcelOpsServer(options = {}) {
         stagingDir: z.string().min(1).default("staging"),
         deliveryDir: z.string().min(1).default("delivery"),
         confidenceThreshold: z.number().min(0).max(1).default(0.85),
+        delivery: z
+          .object({
+            formats: z.array(z.enum(["xlsx", "csv", "pdf"])).min(1),
+            csv: z
+              .object({
+                mode: z.enum(["single-sheet", "one-file-per-sheet"]),
+                sheet: z.string().min(1).optional(),
+              })
+              .optional(),
+            pdf: z
+              .object({ sheets: z.union([z.literal("all"), z.array(z.string().min(1)).min(1)]) })
+              .optional(),
+          })
+          .optional(),
         recipe: z.string().min(1).optional(),
         targets: z
           .array(
@@ -178,7 +192,7 @@ export function createExcelOpsServer(options = {}) {
     {
       title: "Run an approved Excel delivery",
       description:
-        "Writes and independently verifies delivery copies. Call only after showing the dry-run plan and obtaining explicit user approval. Source files remain unchanged.",
+        "Writes and independently verifies delivery copies, then produces the plan's XLSX/CSV/PDF artifacts and Manifest evidence. Call only after showing the dry-run plan and obtaining explicit user approval. Source files remain unchanged.",
       inputSchema: z.object({
         ...DeliveryOptions,
         confirmed: z

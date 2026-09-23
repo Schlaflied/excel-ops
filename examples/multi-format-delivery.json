@@ -1,0 +1,25 @@
+{
+  "inputs": ["sources/records.csv"],
+  "staging_dir": "staging",
+  "delivery_dir": "delivery",
+  "delivery": {
+    "formats": ["xlsx", "csv", "pdf"],
+    "csv": { "mode": "one-file-per-sheet" },
+    "pdf": { "sheets": "all" }
+  },
+  "targets": [
+    {
+      "key": "report",
+      "template": "templates/report.xlsx",
+      "sheet": "Report",
+      "field_columns": {
+        "record_id": "A",
+        "location": "B",
+        "event_date": "C",
+        "identifier": "D",
+        "category": "E",
+        "source": "F"
+      }
+    }
+  ]
+}

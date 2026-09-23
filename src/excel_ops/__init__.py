@@ -40,6 +40,7 @@ from .delivery_manifest import (
     write_delivery_manifest,
     write_delivery_manifests,
 )
+from .delivery_exports import DeliveryExportError, ExportArtifact, export_delivery_artifacts
 from .pdf_export import PdfExportError, export_pdf
 from .excel_pdf_export import ExcelPdfExportError, export_pdf_with_excel
 from .workbook_export import WorkbookExportError, export_csv, export_xlsx
@@ -257,6 +258,9 @@ __all__ = [
     "load_delivery_manifest",
     "write_delivery_manifest",
     "write_delivery_manifests",
+    "DeliveryExportError",
+    "ExportArtifact",
+    "export_delivery_artifacts",
     "load_workdir_recipe",
     "override_from_entry",
     "save_workdir_recipe",

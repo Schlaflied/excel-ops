@@ -434,6 +434,10 @@ def run_delivery(
     decisions: Sequence[RecipeDecision] = (),
     dry_run: bool = False,
     post_stage_hook: Callable[[Path], None] | None = None,
+    artifact_hook: Callable[
+        [DeliveryRun, tuple[DeliveryManifest, ...]], tuple[DeliveryManifest, ...]
+    ]
+    | None = None,
     idempotency: IdempotencyOptions | None = None,
     period: PeriodResult | None = None,
     write_manifest: bool = True,
@@ -444,6 +448,11 @@ def run_delivery(
     before verification.  It exists so callers and tests can inspect or corrupt
     the staged artifact and prove that verification, not the writer, decides
     whether a file is delivered.
+
+    ``artifact_hook`` runs after the verified workbooks and their in-memory
+    Manifests exist, but before evidence is written and idempotency is marked
+    successful.  It lets format adapters attach their evidence atomically to
+    the delivery result: an export failure makes the whole run retryable.
 
     ``idempotency`` opts this call into the whole-run short-circuit.  The run
     fingerprint is computed before any matching, write or verification; when it
@@ -576,6 +585,24 @@ def run_delivery(
         },
         record_input_paths=record_inputs,
     )
+    if artifact_hook is not None and delivered:
+        try:
+            manifests = artifact_hook(run, manifests)
+        except (OSError, ValueError) as error:
+            artifact_failure = DeliveryFailure(
+                "format_export_failed",
+                f"A selected delivery format could not be exported: {error}",
+                "Correct the export scope or install a supported PDF renderer, then re-run.",
+            )
+            failures = [*failures, artifact_failure]
+            if guard is not None:
+                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
+            return replace(
+                run,
+                delivered=False,
+                failures=tuple(failures),
+                manifests=(),
+            )
     if write_manifest:
         try:
             write_delivery_manifests(manifests)

@@ -935,6 +935,18 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
     from excel_ops.cli import main
 
     scenario = _scenario(tmp_path)
+    template = Path(scenario["targets"][0].template_path)
+    workbook = load_workbook(template)
+    try:
+        for worksheet in workbook.worksheets:
+            for row in worksheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == "f":
+                        cell.value = None
+        workbook.save(template)
+    finally:
+        workbook.close()
+    scenario["before"][template] = template.read_bytes()
     config = tmp_path / "delivery-plan.json"
     config.write_text(
         json.dumps(
@@ -946,6 +958,10 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
                 ],
                 "staging_dir": "staging",
                 "delivery_dir": "delivery",
+                "delivery": {
+                    "formats": ["xlsx", "csv"],
+                    "csv": {"mode": "one-file-per-sheet"},
+                },
                 "targets": [
                     {
                         "key": NORTH,
@@ -991,6 +1007,9 @@ def test_declarative_configuration_round_trips_through_the_cli(tmp_path: Path):
     assert report["delivered"] is True
     assert report["counts"][WRITTEN] == 2
     assert Path(report["delivery_paths"][0]).is_file()
+    assert {item["actual_format"] for item in report["exports"]} == {"xlsx", "csv"}
+    manifest = json.loads(Path(report["manifest_paths"][0]).read_text(encoding="utf-8"))
+    assert {item["actual_format"] for item in manifest["exports"]} == {"xlsx", "csv"}
     _assert_originals_untouched(scenario)
 
 
@@ -1351,6 +1370,37 @@ def test_a_manifest_write_failure_is_recorded_as_failed_and_the_next_run_retries
     assert healed.no_op is False
     assert healed.delivered is True
     assert healed.manifests
+
+
+def test_an_artifact_export_failure_is_recorded_as_failed_and_the_next_run_retries(
+    tmp_path: Path,
+):
+    scenario = _scenario(tmp_path)
+    options = _idempotent()
+
+    def fail_export(run, manifests):
+        raise ValueError("renderer unavailable")
+
+    failed = _run(scenario, idempotency=options, artifact_hook=fail_export)
+
+    assert failed.delivered is False
+    assert failed.manifests == ()
+    assert [item.code for item in failed.failures] == ["format_export_failed"]
+    record = load_run_record(state_path(scenario["delivery"]), TASK_KEY)
+    assert record is not None
+    assert record.status == FAILED
+    assert record.successful is False
+
+    retried = _run(
+        scenario,
+        idempotency=options,
+        artifact_hook=lambda run, manifests: manifests,
+    )
+
+    assert retried.no_op is False
+    assert retried.run_decision.decision == RETRY
+    assert retried.delivered is True
+    assert _run(scenario, idempotency=options).no_op is True
 
 
 def test_a_dry_run_reports_the_verdict_without_short_circuiting(tmp_path: Path):
