@@ -70,7 +70,7 @@
     "src/excel_ops/schema_drift.py": "aa9085267d4918a3894a1874c5b0fab0720df20a80d54e7f9e189e3e42064f50",
     "src/excel_ops/template_writer.py": "890e417eb3429d2ccac8786974ccd3140934c79065527312d5ee839327087803",
     "src/excel_ops/workbook.py": "56a8a13e2b9cdc583301610ff12b4d46789320c21fdc06b8bee783b5bba42f67",
-    "src/excel_ops/workbook_export.py": "b68a754b82ded1fb714da86cf5ccbb442aa43855901e3fd0b59f79c2d001eec7",
+    "src/excel_ops/workbook_export.py": "9ad79c3fd1287658442add1ed937e551f38ed37c94396ba1e4dfc52ec1ea2a7f",
     "src/excel_ops/workdir.py": "54cedfe78b028b953b8a0c3fd7f054e0cc4039b2ce7f892b2061963b2d3ba32f",
     "tests/mcp-cli.integration.test.mjs": "a1c6f60333be153de92143c137cd93d5456c17f6464c54cd81e83e8d4b9dda00",
     "tests/mcp.test.mjs": "ac55933ff902a0739a0889ceafbf148bb5f10a124821bd13a6252087eb393487",
