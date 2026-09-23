@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 from .excel_pdf_export import ExcelPdfExportError, export_pdf_with_excel
 from .idempotency import file_content_digest
 from .pdf_export import PdfExportError, export_pdf
+from .pdf_layout_verification import verify_pdf_layout
 from .workbook_export import WorkbookExportError, export_csv
 
 
@@ -31,6 +32,7 @@ class ExportArtifact:
     digest: str
     verification: str = "passed"
     summary: str = ""
+    findings: tuple[Mapping[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -43,6 +45,7 @@ class ExportArtifact:
             "digest": self.digest,
             "verification": self.verification,
             "summary": self.summary,
+            "findings": [dict(item) for item in self.findings],
         }
 
 
@@ -121,14 +124,19 @@ def _export_pdf_artifact(
             summary = "rendered by local LibreOffice"
     except (ExcelPdfExportError, PdfExportError) as error:
         raise DeliveryExportError(str(error)) from error
+    layout = verify_pdf_layout(source, output, sheets=chosen)
+    warnings = ["pdf_is_not_editable"]
+    if not layout.passed:
+        warnings.append("pdf_layout_not_verified")
     return _artifact(
         "pdf",
         source,
         output,
         chosen,
-        ("pdf_is_not_editable", "pdf_layout_not_verified"),
+        warnings,
         summary,
-        verification="unverified",
+        verification="passed" if layout.passed else "unverified",
+        findings=tuple(item.to_dict() for item in layout.findings),
     )
 
 
@@ -140,6 +148,7 @@ def _artifact(
     warnings: Sequence[str],
     summary: str = "verified output",
     verification: str = "passed",
+    findings: Sequence[Mapping[str, Any]] = (),
 ) -> ExportArtifact:
     """Build evidence only after checking suffix and persisted content."""
 
@@ -156,6 +165,7 @@ def _artifact(
         file_content_digest(output),
         verification=verification,
         summary=summary,
+        findings=tuple(dict(item) for item in findings),
     )
 
 

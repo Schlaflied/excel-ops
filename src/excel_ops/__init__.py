@@ -42,6 +42,11 @@ from .delivery_manifest import (
 )
 from .delivery_exports import DeliveryExportError, ExportArtifact, export_delivery_artifacts
 from .pdf_export import PdfExportError, export_pdf
+from .pdf_layout_verification import (
+    PdfLayoutFinding,
+    PdfLayoutVerification,
+    verify_pdf_layout,
+)
 from .excel_pdf_export import ExcelPdfExportError, export_pdf_with_excel
 from .workbook_export import WorkbookExportError, export_csv, export_xlsx
 from .idempotency import (
@@ -269,7 +274,10 @@ __all__ = [
     "export_csv",
     "export_xlsx",
     "PdfExportError",
+    "PdfLayoutFinding",
+    "PdfLayoutVerification",
     "export_pdf",
+    "verify_pdf_layout",
     "ExcelPdfExportError",
     "export_pdf_with_excel",
 ]
