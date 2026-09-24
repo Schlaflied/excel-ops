@@ -6,6 +6,8 @@
 
 中文 | [English](README.md)
 
+最新版本：**[v0.5.0 — Agent 可靠交付系统](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0)**
+
 ### 我讨厌 VLOOKUP。这就是原因。
 
 Excel-Ops 是一套由对话驱动、供 AI Agent 使用的工作流。把文件交给 Agent，用日常语言描述想要的结果；Agent 规划操作、选择合适的本地或云端连接器、隔离不确定项、验证结果，并交付一套可检查的文件，而不是把猜测包装成答案。它并非又一个表格网页应用，也不是 AI 公式生成器。
@@ -74,6 +76,10 @@ excel-ops deliver delivery-plan.json             # 写入 staging 副本，验�
 
 每个交付输出还会各带一份来源与验证 Manifest——记录产出它的输入、模板与 Recipe 版本、逐 tab 明细，以及落盘文件自身的哈希与真实行数，并与真实文件重新核对，而不只依赖运行时计数器。见[交付 Manifest](docs/delivery-manifest.zh-CN.md)。
 
+同一份经过验证的工作簿可以交付为 XLSX、CSV 或 PDF。CSV/PDF 的能力损失会明确说明；PDF 可使用 LibreOffice 或本机 Microsoft Excel 导出，并检查页面布局问题。见[多格式交付](docs/multi-format-export.zh-CN.md)。
+
+公式交付同时考虑目标 Excel 版本与验证证据：Agent 可以规划查找、条件汇总和日期公式，把公式或静态值写入显式区域，并在交付前使用 Microsoft Excel 或 LibreOffice 独立复算公式模式。见[公式规划](docs/formula-planning.zh-CN.md)。
+
 对话约定见 [Agent 工作流](docs/agent-workflow.zh-CN.md)；本地和云端表格的行为见[连接器合同](docs/connectors.zh-CN.md)。
 
 字段级批量确认、本次运行/项目作用域和冲突重确认见[批量歧义确认与 Recipe](docs/ambiguity-recipes.zh-CN.md)。
@@ -135,11 +141,7 @@ excel-ops deliver delivery-plan.json --run-state --task-key weekly-north
 
 ### 已经实现（全部属于 Phase 1）
 
-导入与版式识别（[#1](https://github.com/Schlaflied/excel-ops/issues/1)）、类型与地区推断（[#24](https://github.com/Schlaflied/excel-ops/issues/24)）、Schema Drift 检测（[#10](https://github.com/Schlaflied/excel-ops/issues/10)）、严格匹配与去重（[#2](https://github.com/Schlaflied/excel-ops/issues/2)）、离线复核包（[#18](https://github.com/Schlaflied/excel-ops/issues/18)）、安全模板写回（[#3](https://github.com/Schlaflied/excel-ops/issues/3)）、独立交付验证（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）、业务周期解析与日期刷新（[#16](https://github.com/Schlaflied/excel-ops/issues/16)、[#9](https://github.com/Schlaflied/excel-ops/issues/9)）、安全文件命名（[#17](https://github.com/Schlaflied/excel-ops/issues/17)）、静态公式完整性检查（[#11](https://github.com/Schlaflied/excel-ops/issues/11)）、批量歧义确认与 Recipe（[#26](https://github.com/Schlaflied/excel-ops/issues/26)）、工作目录扫描（[#15](https://github.com/Schlaflied/excel-ops/issues/15)）、幂等执行（[#19](https://github.com/Schlaflied/excel-ops/issues/19)）、交付 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、语义化数字与币种格式（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、把上述模块串成一次可验证交付运行的 `run_delivery(...)`（[#46](https://github.com/Schlaflied/excel-ops/issues/46)）、跨平台 CI（[#50](https://github.com/Schlaflied/excel-ops/issues/50)），以及最新完成的——由 Codex 实现、只转发给同一套 Python CLI、不重写任何业务逻辑的 JS/TS Agent 编排层（MCP 服务，[#53](https://github.com/Schlaflied/excel-ops/issues/53)），和在它之上新增的、供 Agent 调用的 delivery plan 准备入口（[#59](https://github.com/Schlaflied/excel-ops/issues/59)）。
-
-### 推进中
-
-自然语言公式生成（[#25](https://github.com/Schlaflied/excel-ops/issues/25)）。
+导入与版式识别（[#1](https://github.com/Schlaflied/excel-ops/issues/1)）、类型与地区推断（[#24](https://github.com/Schlaflied/excel-ops/issues/24)）、Schema Drift 检测（[#10](https://github.com/Schlaflied/excel-ops/issues/10)）、严格匹配与去重（[#2](https://github.com/Schlaflied/excel-ops/issues/2)）、离线复核包（[#18](https://github.com/Schlaflied/excel-ops/issues/18)）、安全模板写回（[#3](https://github.com/Schlaflied/excel-ops/issues/3)）、独立交付验证（[#4](https://github.com/Schlaflied/excel-ops/issues/4)）、业务周期解析与日期刷新（[#16](https://github.com/Schlaflied/excel-ops/issues/16)、[#9](https://github.com/Schlaflied/excel-ops/issues/9)）、安全文件命名（[#17](https://github.com/Schlaflied/excel-ops/issues/17)）、公式完整性检查（[#11](https://github.com/Schlaflied/excel-ops/issues/11)）、批量歧义确认与 Recipe（[#26](https://github.com/Schlaflied/excel-ops/issues/26)）、工作目录扫描（[#15](https://github.com/Schlaflied/excel-ops/issues/15)）、幂等执行（[#19](https://github.com/Schlaflied/excel-ops/issues/19)）、交付 Manifest（[#20](https://github.com/Schlaflied/excel-ops/issues/20)）、语义化数字与币种格式（[#23](https://github.com/Schlaflied/excel-ops/issues/23)）、经过验证的 XLSX/CSV/PDF 交付（[#22](https://github.com/Schlaflied/excel-ops/issues/22)）、自然语言公式规划、安全写入和独立复算（[#25](https://github.com/Schlaflied/excel-ops/issues/25)）、把上述模块串成一次可验证交付运行的 `run_delivery(...)`（[#46](https://github.com/Schlaflied/excel-ops/issues/46)）、跨平台 CI（[#50](https://github.com/Schlaflied/excel-ops/issues/50)），以及只转发给同一套 Python CLI、不重写业务逻辑的 JS/TS Agent MCP 编排层（[#53](https://github.com/Schlaflied/excel-ops/issues/53)）和 delivery plan 准备入口（[#59](https://github.com/Schlaflied/excel-ops/issues/59)）。
 
 ### 仍待定 / 尚未开始
 
@@ -147,15 +149,15 @@ excel-ops deliver delivery-plan.json --run-state --task-key weekly-north
 
 ## 当前能力
 
-v0.3.0 已发布多来源导入、类型与地区格式推断、Schema Drift 检查、严格匹配和离线人工复核流程。
+**v0.5.0 是当前最新版本。** 它包含完整的本地 Phase 1 交付基础：业务周期解析、安全模板写回、独立验证、`run_delivery(...)`、工作目录扫描、整次运行幂等、交付 Manifest、语义化数字格式、跨平台 refresh/apply/rollback、本地 Agent MCP、经过验证的 XLSX/CSV/PDF 交付，以及从版本感知公式规划到独立复算交付的完整链路。
 
-`main` 另外包含以下**已合并但尚未进入任何更新 Release**的能力：业务周期解析、周期感知日期刷新、安全文件命名、批量歧义确认与项目 Recipe、安全模板写回、独立交付验证、静态公式完整性检查、把它们串成一次可验证 Phase 1 交付运行的集成入口 `run_delivery(...)`（[#46](https://github.com/Schlaflied/excel-ops/issues/46)，[文档](docs/delivery-pipeline.zh-CN.md)）、工作目录扫描、幂等执行、交付 Manifest、语义化数字格式、跨平台 CI，以及一个本地 Agent MCP 服务，把 `scan_workdir`、`prepare_delivery`、`plan_delivery`、`run_delivery` 都暴露成结构化工具，内部仍转发给同一套 Python 核心（[#53](https://github.com/Schlaflied/excel-ops/issues/53)、[#59](https://github.com/Schlaflied/excel-ops/issues/59)，[文档](docs/mcp.zh-CN.md)）。
+MCP 服务把 `scan_workdir`、`prepare_delivery`、`plan_delivery`、`run_delivery` 暴露为结构化工具，内部仍使用同一套 Python 核心（[文档](docs/mcp.zh-CN.md)）。公式模式在 Windows 上使用 Microsoft Excel，或使用 LibreOffice 独立复算；两者都不可用时，交付会失败，不会宣称未经验证的成功。
 
-“模块已合并”“仓库测试通过”“落盘文件已验证”和“已发布 Release”是四种不同的证据。v0.3.0 之后的内容都还没有发布。
+“模块已合并”“仓库测试通过”“落盘文件已验证”和“已发布 Release”仍是四种不同的证据。已发布范围和已知缺口见 [v0.5.0 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0)。
 
 [查看完整能力清单、实现状态、安全边界以及对应的 Issue/PR](docs/capabilities.zh-CN.md)。
 
-`main` 现已包含 XLSX/CSV/PDF 多格式交付（[#22](https://github.com/Schlaflied/excel-ops/issues/22)，[文档](docs/multi-format-export.zh-CN.md)）。自然语言公式生成仍在推进中；首个类型化、版本感知的规划切片见[公式规划文档](docs/formula-planning.zh-CN.md)。全部云端连接器仍不在范围内。语义化币种与精度规则见[数字格式策略文档](docs/number-format-policy.zh-CN.md)。
+全部云端连接器仍不在范围内。工作目录扫描结果仍需作为显式计划输入，尚未由 `run_delivery` 自动选择。语义化币种与精度规则见[数字格式策略文档](docs/number-format-policy.zh-CN.md)。
 
 ## 许可证
 
