@@ -19,6 +19,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CACHEABLE = new Set(["up-to-date", "update-available", "local-system-changed"]);
 const HASH = /^[a-f0-9]{64}$/;
 const TEXT_EXTENSIONS = new Set([".md", ".py", ".mjs", ".json", ".toml", ".yaml", ".yml"]);
+// issue-refresh-mjs.md is no longer shipped, but stays recognized so older manifests
+// and pre-removal rollback states still validate.
 const EXACT_SYSTEM = new Set([
   ".gitignore", "AGENTS.md", "LICENSE", "README.md", "README.zh-CN.md",
   "package-lock.json", "package.json", "pyproject.toml", "refresh.mjs", "issue-refresh-mjs.md",
