@@ -26,7 +26,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from .ambiguity import RecipeDecision, build_confirmation_batch, save_project_recipe
+from .ambiguity import (
+    ConfirmationBatch,
+    RecipeDecision,
+    build_confirmation_batch,
+    save_project_recipe,
+)
 from .delivery_ambiguity import (
     _ambiguities_from_matches,
     _ambiguity_outcomes,
@@ -185,13 +190,7 @@ def run_delivery(
         artifact_fingerprint,
     )
     if guard is not None and guard.decision.no_op and not dry_run:
-        outputs = tuple(
-            output
-            for target in targets
-            for output in (_delivery_path(target, delivery),)
-            if output.is_file()
-        )
-        if artifact_hook is None or recorded_exports_are_current(outputs):
+        if _recorded_outputs_current(targets, delivery, artifact_hook):
             return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
         guard.decision = RunDecision(
             RETRY,
@@ -202,27 +201,18 @@ def run_delivery(
 
     records, record_inputs, ingest_failures = _ingest(inputs)
     failures.extend(ingest_failures)
-
-    outcomes, match_results = _classify(records, targets, confidence_threshold)
-    ambiguities, ambiguity_records = _ambiguities_from_matches(match_results)
     if recipe_failure is not None:
         failures.append(recipe_failure)
+
     run_decisions = {item.key: item for item in decisions if item.scope == "this-run"}
     project_decisions = {item.key: item for item in decisions if item.scope == "project"}
-    batch = build_confirmation_batch(
-        ambiguities,
-        run_decisions=run_decisions,
-        project_recipe={**project_recipe, **project_decisions},
+    outcomes, batch, ambiguity_records = _route_records(
+        records,
+        targets,
+        confidence_threshold,
+        run_decisions,
+        {**project_recipe, **project_decisions},
     )
-    confirmations = _confirmations(batch, ambiguity_records, targets)
-    if confirmations:
-        # Re-run matching with the reusable human decisions. The first batch is
-        # kept as the provenance of those decisions.
-        outcomes, _ = _classify(
-            records, targets, confidence_threshold, confirmations=confirmations
-        )
-
-    outcomes = _block_unresolved(outcomes, batch, ambiguity_records)
     # A dry run must not touch a single file, and a real run must never drop a
     # decision an earlier run already recorded: merge the loaded Recipe with
     # this call's decisions so the file only ever grows or updates in place.
@@ -232,6 +222,7 @@ def run_delivery(
     plan, existing_ids = _build_plan(inputs, outcomes, targets, staging, delivery, batch)
     outcomes = _mark_existing(outcomes, existing_ids)
     plan = replace(plan, counts=_counts(outcomes))
+    ambiguity_outcomes = tuple(_ambiguity_outcomes(batch, ambiguity_records))
 
     if dry_run or not plan.writable or failures:
         if not plan.writable:
@@ -253,7 +244,7 @@ def run_delivery(
             _counts(outcomes),
             tuple(outcomes),
             tuple(_planned_outcome(item, plan) for item in targets),
-            tuple(_ambiguity_outcomes(batch, ambiguity_records)),
+            ambiguity_outcomes,
             tuple(failures),
             str(recipe_path) if recipe_path else None,
             batch,
@@ -280,42 +271,113 @@ def run_delivery(
         _counts(outcomes),
         tuple(outcomes),
         tuple(target_outcomes),
-        tuple(_ambiguity_outcomes(batch, ambiguity_records)),
+        ambiguity_outcomes,
         tuple(failures),
         str(recipe_path) if recipe_path else None,
         batch,
         False,
         guard.decision if guard else None,
     )
-    # The Manifest is generated last, from the run that just finished and from
-    # the file that is now on disk.  It is evidence about a completed delivery,
-    # never a parallel bookkeeping system that could drift from it.
+    return _finish_run(
+        run,
+        guard,
+        targets,
+        period=period,
+        recipe_decisions={**project_recipe, **project_decisions, **run_decisions},
+        record_inputs=record_inputs,
+        artifact_hook=artifact_hook,
+        write_manifest=write_manifest,
+    )
+
+
+def _recorded_outputs_current(
+    targets: Sequence[DeliveryTarget],
+    delivery: Path,
+    artifact_hook: Callable[..., Any] | None,
+) -> bool:
+    """Whether a no-op may trust the exports recorded beside the delivered files."""
+
+    if artifact_hook is None:
+        return True
+    outputs = tuple(
+        output
+        for target in targets
+        for output in (_delivery_path(target, delivery),)
+        if output.is_file()
+    )
+    return recorded_exports_are_current(outputs)
+
+
+def _route_records(
+    records: Sequence[ExtractedRecord],
+    targets: Sequence[DeliveryTarget],
+    confidence_threshold: float,
+    run_decisions: Mapping[str, RecipeDecision],
+    project_recipe: Mapping[str, RecipeDecision],
+) -> tuple[list[RecordOutcome], ConfirmationBatch, dict[str, tuple[str, ...]]]:
+    """Classify every record and apply the human decisions for open ambiguities."""
+
+    outcomes, match_results = _classify(records, targets, confidence_threshold)
+    ambiguities, ambiguity_records = _ambiguities_from_matches(match_results)
+    batch = build_confirmation_batch(
+        ambiguities,
+        run_decisions=run_decisions,
+        project_recipe=project_recipe,
+    )
+    confirmations = _confirmations(batch, ambiguity_records, targets)
+    if confirmations:
+        # Re-run matching with the reusable human decisions. The first batch is
+        # kept as the provenance of those decisions.
+        outcomes, _ = _classify(
+            records, targets, confidence_threshold, confirmations=confirmations
+        )
+    return _block_unresolved(outcomes, batch, ambiguity_records), batch, ambiguity_records
+
+
+def _finish_run(
+    run: DeliveryRun,
+    guard: "_RunGuard | None",
+    targets: Sequence[DeliveryTarget],
+    *,
+    period: PeriodResult | None,
+    recipe_decisions: Mapping[str, RecipeDecision],
+    record_inputs: Sequence[str],
+    artifact_hook: Callable[
+        [DeliveryRun, tuple[DeliveryManifest, ...]], tuple[DeliveryManifest, ...]
+    ]
+    | None,
+    write_manifest: bool,
+) -> DeliveryRun:
+    """Attach Manifests and export evidence, then record the run's outcome.
+
+    The Manifest is generated last, from the run that just finished and from
+    the file that is now on disk.  It is evidence about a completed delivery,
+    never a parallel bookkeeping system that could drift from it.
+    """
+
+    failures = list(run.failures)
     manifests = build_delivery_manifests(
         run,
         targets,
         period=period,
-        recipe_decisions={
-            **project_recipe,
-            **project_decisions,
-            **run_decisions,
-        },
+        recipe_decisions=recipe_decisions,
         record_input_paths=record_inputs,
     )
     if artifact_hook is not None:
         built_outputs = {Path(manifest.output).resolve() for manifest in manifests}
         recovered = tuple(
             manifest
-            for outcome in target_outcomes
+            for outcome in run.targets
             if outcome.delivery_path
             for manifest in (read_delivery_manifest(outcome.delivery_path),)
             if manifest is not None and Path(manifest.output).resolve() not in built_outputs
         )
         manifests = (*manifests, *recovered)
-    if artifact_hook is not None and delivered:
+    if artifact_hook is not None and run.delivered:
         manifest_outputs = {Path(manifest.output).resolve() for manifest in manifests}
         missing_manifests = tuple(
             outcome.delivery_path
-            for outcome in target_outcomes
+            for outcome in run.targets
             if outcome.delivery_path
             and Path(outcome.delivery_path).is_file()
             and Path(outcome.delivery_path).resolve() not in manifest_outputs
@@ -328,24 +390,18 @@ def run_delivery(
                     "Restore or rebuild the Manifest, then re-run the delivery.",
                 )
             )
-            if guard is not None:
-                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
-            return replace(
-                run,
-                delivered=False,
-                failures=tuple(failures),
-                manifests=(),
-            )
-    if artifact_hook is not None and delivered:
+            return _failed_run(run, guard, failures)
+    if artifact_hook is not None and run.delivered:
         try:
             manifests = artifact_hook(run, manifests)
         except (OSError, ValueError) as error:
-            artifact_failure = DeliveryFailure(
-                "format_export_failed",
-                f"A selected delivery format could not be exported: {error}",
-                "Correct the export scope or install a supported PDF renderer, then re-run.",
+            failures.append(
+                DeliveryFailure(
+                    "format_export_failed",
+                    f"A selected delivery format could not be exported: {error}",
+                    "Correct the export scope or install a supported PDF renderer, then re-run.",
+                )
             )
-            failures = [*failures, artifact_failure]
             if write_manifest and manifests:
                 try:
                     write_delivery_manifests(manifests)
@@ -357,14 +413,7 @@ def run_delivery(
                             "Check the delivery directory's permissions and re-run.",
                         )
                     )
-            if guard is not None:
-                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
-            return replace(
-                run,
-                delivered=False,
-                failures=tuple(failures),
-                manifests=(),
-            )
+            return _failed_run(run, guard, failures)
     if write_manifest:
         try:
             write_delivery_manifests(manifests)
@@ -376,29 +425,34 @@ def run_delivery(
             # missing manifest.  Report it the same way every other failure
             # in this function is reported, and let ``guard.finish`` record
             # the failure so the next identical run is a ``retry``.
-            manifest_failure = DeliveryFailure(
-                "manifest_write_failed",
-                f"The delivery manifest could not be written: {error}",
-                "Check the delivery directory's permissions and re-run the delivery.",
+            failures.append(
+                DeliveryFailure(
+                    "manifest_write_failed",
+                    f"The delivery manifest could not be written: {error}",
+                    "Check the delivery directory's permissions and re-run the delivery.",
+                )
             )
-            failures = [*failures, manifest_failure]
-            if guard is not None:
-                guard.finish(FAILED, False, _counts(outcomes), failures, target_outcomes)
-            return replace(
-                run,
-                delivered=False,
-                failures=tuple(failures),
-                manifests=(),
-            )
+            return _failed_run(run, guard, failures)
     if guard is not None:
         guard.finish(
-            SUCCEEDED if delivered else FAILED,
-            delivered,
-            _counts(outcomes),
+            SUCCEEDED if run.delivered else FAILED,
+            run.delivered,
+            run.counts,
             failures,
-            target_outcomes,
+            run.targets,
         )
     return replace(run, manifests=manifests)
+
+
+def _failed_run(
+    run: DeliveryRun, guard: "_RunGuard | None", failures: Sequence[DeliveryFailure]
+) -> DeliveryRun:
+    """Record a failed run and return it without Manifests, so it is retried."""
+
+    if guard is not None:
+        guard.finish(FAILED, False, run.counts, failures, run.targets)
+    return replace(run, delivered=False, failures=tuple(failures), manifests=())
+
 
 
 def plan_delivery(
