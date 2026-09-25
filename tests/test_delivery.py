@@ -338,7 +338,7 @@ def test_run_delivery_applies_formula_rules_with_independent_recalculation(
         return apply_formula_delivery(path, rules, recalculator=recalculate)
 
     monkeypatch.setattr(
-        "excel_ops.delivery.apply_formula_delivery",
+        "excel_ops.delivery_write.apply_formula_delivery",
         apply_with_test_engine,
     )
 
@@ -415,7 +415,7 @@ def test_run_delivery_rejects_recalculation_that_removes_formula(
         return apply_formula_delivery(path, rules, recalculator=remove_formula)
 
     monkeypatch.setattr(
-        "excel_ops.delivery.apply_formula_delivery",
+        "excel_ops.delivery_write.apply_formula_delivery",
         apply_with_bad_engine,
     )
 
