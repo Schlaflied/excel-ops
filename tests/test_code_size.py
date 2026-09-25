@@ -32,18 +32,33 @@ OVERSIZED_MODULES = {
 }
 
 
+def _modules() -> dict[str, Path]:
+    return {path.relative_to(SOURCE).as_posix(): path for path in sorted(SOURCE.rglob("*.py"))}
+
+
 def _module_lines() -> dict[str, int]:
-    return {path.name: len(path.read_text(encoding="utf-8").splitlines()) for path in SOURCE.glob("*.py")}
+    return {
+        name: len(path.read_text(encoding="utf-8").splitlines())
+        for name, path in _modules().items()
+    }
 
 
 def _function_lines() -> dict[str, int]:
     sizes: dict[str, int] = {}
-    for path in SOURCE.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                key = f"{path.name}:{node.name}"
-                sizes[key] = max(sizes.get(key, 0), node.end_lineno - node.lineno + 1)
+
+    def visit(node: ast.AST, module: str, scope: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                qualname = f"{scope}.{child.name}" if scope else child.name
+                if not isinstance(child, ast.ClassDef):
+                    key = f"{module}:{qualname}"
+                    sizes[key] = max(sizes.get(key, 0), child.end_lineno - child.lineno + 1)
+                visit(child, module, qualname)
+            else:
+                visit(child, module, scope)
+
+    for name, path in _modules().items():
+        visit(ast.parse(path.read_text(encoding="utf-8")), name, "")
     return sizes
 
 

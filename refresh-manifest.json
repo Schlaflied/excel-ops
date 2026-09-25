@@ -95,7 +95,7 @@
     "tests/test_agent_skill.py": "e33bc75638ffd54351a24b7561f43b687d0384abcf230f0acd17d03d730e745e",
     "tests/test_ambiguity.py": "f997ca6e22e713fa76344cdd89fe5a2a2b8d32a59640c65dcaf60debf07ed4c6",
     "tests/test_bilingual_docs.py": "534066f64b0c88a1484a6b9344136e0d1cd69b6982468b9ae4bbe1f98fe4a3a5",
-    "tests/test_code_size.py": "01df74a20bedf1eec93bbe6937cbbea2235e525d2ab8f6b41ea8261da998068b",
+    "tests/test_code_size.py": "df8b12f7b0a0e9c23dcff8245df91902614eadc9c1e8173d30034f33a58d37db",
     "tests/test_delivery.py": "4db8bb5ef296b9d1c47558ea0b8fe8ecd58308988050d0edb4f7c3a775c27a58",
     "tests/test_delivery_manifest.py": "8db9a2f45173c6c573e51e0c64bd0bbf4c98e206e6f29b1591221be97ef57876",
     "tests/test_delivery_verification.py": "39d72e80c24d99128a57068d5d25dd34af3fe955c590f003c8675a5d50277b48",
