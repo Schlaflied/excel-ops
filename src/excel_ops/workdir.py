@@ -27,475 +27,90 @@ reason for that disposition.  Nothing is silently picked:
 The scan is not wired into :mod:`excel_ops.delivery`; it is exposed on its own
 as ``excel-ops scan-workdir`` for now.
 """
-
 from __future__ import annotations
 
-import fnmatch
-import hashlib
 import json
 import os
-import re
-from dataclasses import asdict, dataclass, replace
-from datetime import date, datetime, time, timezone
-from pathlib import Path, PurePosixPath
+from dataclasses import asdict, replace
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
-from zipfile import BadZipFile
 
-from openpyxl import load_workbook
-from openpyxl.utils.exceptions import InvalidFileException
+from .workdir_classify import (
+    _is_stable,
+    _scan_file,
+    sync_artifact_reason,
+    version_key,
+    workbook_metadata_signal,
+)
+from .workdir_models import (
+    CLASSIFICATIONS,
+    DATA_EXTENSIONS,
+    DEFAULT_STABILITY_WINDOW_SECONDS,
+    DISPOSITIONS,
+    EXCLUDE,
+    INCLUDE,
+    INPUT,
+    PRIOR_DELIVERY,
+    READABLE_EXTENSIONS,
+    REVIEW,
+    REVIEW_RETURN,
+    TEMPLATE,
+    TEMPLATE_EXTENSIONS,
+    UNKNOWN,
+    WORKBOOK_EXTENSIONS,
+    ClassificationOverride,
+    DuplicateGroup,
+    PeriodWindow,
+    ScanResult,
+    ScanScope,
+    ScannedFile,
+    StabilitySample,
+    UnauthorizedPathError,
+    VersionCandidateGroup,
+    WorkdirScanError,
+    _as_utc,
+)
+
+__all__ = [
+    "CLASSIFICATIONS",
+    "DATA_EXTENSIONS",
+    "DEFAULT_STABILITY_WINDOW_SECONDS",
+    "DISPOSITIONS",
+    "EXCLUDE",
+    "INCLUDE",
+    "INPUT",
+    "PRIOR_DELIVERY",
+    "READABLE_EXTENSIONS",
+    "RECIPE_FORMAT",
+    "REVIEW",
+    "REVIEW_RETURN",
+    "TEMPLATE",
+    "TEMPLATE_EXTENSIONS",
+    "UNKNOWN",
+    "WORKBOOK_EXTENSIONS",
+    "ClassificationOverride",
+    "DuplicateGroup",
+    "PeriodWindow",
+    "ScanResult",
+    "ScanScope",
+    "ScannedFile",
+    "StabilitySample",
+    "UnauthorizedPathError",
+    "VersionCandidateGroup",
+    "WorkdirScanError",
+    "format_dry_run",
+    "load_workdir_recipe",
+    "override_from_entry",
+    "save_workdir_recipe",
+    "scan_workdir",
+    "sync_artifact_reason",
+    "version_key",
+    "workbook_metadata_signal",
+]
 
 
 RECIPE_FORMAT = "excel-ops-workdir-recipe-v1"
-
-INPUT = "input"
-TEMPLATE = "template"
-PRIOR_DELIVERY = "prior_delivery"
-REVIEW_RETURN = "review_return"
-UNKNOWN = "unknown"
-CLASSIFICATIONS = (INPUT, TEMPLATE, PRIOR_DELIVERY, REVIEW_RETURN, UNKNOWN)
-
-INCLUDE = "include"
-REVIEW = "review"
-EXCLUDE = "exclude"
-DISPOSITIONS = (INCLUDE, REVIEW, EXCLUDE)
-
-#: Extensions this project can actually read.  Anything else is ``unknown`` and
-#: excluded rather than optimistically opened.
-DATA_EXTENSIONS = frozenset({".xlsx", ".xlsm", ".csv", ".json"})
-TEMPLATE_EXTENSIONS = frozenset({".xltx", ".xltm"})
-WORKBOOK_EXTENSIONS = frozenset({".xlsx", ".xlsm", ".xltx", ".xltm"})
-READABLE_EXTENSIONS = DATA_EXTENSIONS | TEMPLATE_EXTENSIONS
-
-#: Seconds a file's size and modification time must already have been unchanged
-#: before its content may be read at all.
-DEFAULT_STABILITY_WINDOW_SECONDS = 5.0
-
-_DAY_START = time.min
-_DAY_END = time.max
-
-_LOCK_PREFIXES = ("~$", ".~lock.", "._")
-_INCOMPLETE_EXTENSIONS = frozenset(
-    {".tmp", ".temp", ".part", ".partial", ".partialdownload", ".crdownload", ".download", ".filepart", ".!ut"}
-)
-_CONFLICT_PATTERN = re.compile(
-    r"conflicted\s+copy|conflict\s+copy|\(conflict(ed)?\b|冲突副本|沖突副本|_conflict-\d",
-    re.IGNORECASE,
-)
-_TEMPLATE_PATTERN = re.compile(r"template|模板|範本|范本", re.IGNORECASE)
-_REVIEW_RETURN_PATTERN = re.compile(
-    r"review[\s_-]*(pack|return|returned|back)|reviewed|复核|覆核|審核|审核|回收|已批注",
-    re.IGNORECASE,
-)
-_PRIOR_DELIVERY_PATTERN = re.compile(
-    r"deliver(y|ed|able)|delivery[\s_-]*pack|已交付|交付件|交付|归档|歸檔|archive[d]?",
-    re.IGNORECASE,
-)
-#: Trailing decorations people add when they save "one more" version.  They are
-#: stripped to build a version key; they are never used to rank versions.
-_VERSION_DECORATIONS = (
-    re.compile(r"\s*\(\d+\)$"),
-    re.compile(r"\s*-\s*copy(\s*\(\d+\))?$", re.IGNORECASE),
-    re.compile(r"[\s_-]*(final|latest|new|old|draft)$", re.IGNORECASE),
-    re.compile(r"[\s_-]*(?<![A-Za-z])v\d+(\.\d+)*$", re.IGNORECASE),
-    re.compile(r"[\s_-]*(rev|version|ver)[\s_-]*\d+(\.\d+)*$", re.IGNORECASE),
-    re.compile(r"[\s_-]*(最终版?|最新版?|终版|定稿|副本|修订版?)$"),
-)
-
-
-class WorkdirScanError(ValueError):
-    """Raised when a scan cannot be performed without guessing."""
-
-
-class UnauthorizedPathError(WorkdirScanError):
-    """Raised when a path outside every authorized root would be touched."""
-
-
-@dataclass(frozen=True)
-class ScanScope:
-    """The explicit allowlist of directories a scan may touch.
-
-    Mirrors ``refresh.mjs``'s root-confinement idiom: a path is usable only when
-    it resolves inside a declared root, symlinks are never followed out of a
-    root, and containment is re-checked at the point of access rather than
-    assumed from how the path was produced.
-    """
-
-    roots: tuple[Path, ...]
-    recursive: bool = True
-    follow_symlinks: bool = False
-
-    @classmethod
-    def of(
-        cls,
-        roots: str | Path | Iterable[str | Path],
-        *,
-        recursive: bool = True,
-        follow_symlinks: bool = False,
-    ) -> "ScanScope":
-        if isinstance(roots, (str, Path)):
-            candidates: list[str | Path] = [roots]
-        else:
-            candidates = list(roots)
-        if not candidates:
-            raise WorkdirScanError("a scan needs at least one authorized root directory")
-        resolved: list[Path] = []
-        for candidate in candidates:
-            root = Path(candidate).expanduser().resolve()
-            if not root.is_dir():
-                raise WorkdirScanError(f"authorized root is not an existing directory: {root}")
-            if root not in resolved:
-                resolved.append(root)
-        return cls(tuple(resolved), recursive, follow_symlinks)
-
-    def authorized_root(self, path: str | Path) -> Path | None:
-        """Return the root containing ``path``, or ``None`` when unauthorized."""
-        try:
-            target = Path(path).expanduser().resolve()
-        except OSError:
-            return None
-        for root in self.roots:
-            if target == root:
-                return root
-            try:
-                target.relative_to(root)
-            except ValueError:
-                continue
-            return root
-        return None
-
-    def require(self, path: str | Path) -> Path:
-        """Resolve ``path`` inside the allowlist or refuse to touch it."""
-        root = self.authorized_root(path)
-        if root is None:
-            raise UnauthorizedPathError(f"path is outside every authorized root: {path}")
-        return Path(path).expanduser().resolve()
-
-    def relative(self, path: str | Path) -> str:
-        target = self.require(path)
-        for root in self.roots:
-            try:
-                return PurePosixPath(target.relative_to(root)).as_posix()
-            except ValueError:
-                continue
-        return target.name
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "roots": [str(root) for root in self.roots],
-            "recursive": self.recursive,
-            "follow_symlinks": self.follow_symlinks,
-        }
-
-
-@dataclass(frozen=True)
-class PeriodWindow:
-    """The authorized current-period window used to separate historical files."""
-
-    start: datetime
-    end: datetime
-
-    @classmethod
-    def of(cls, start: date | datetime, end: date | datetime) -> "PeriodWindow":
-        first = _as_utc(start)
-        last = _as_utc(end, end_of_day=True)
-        if last < first:
-            raise WorkdirScanError("period window end is before its start")
-        return cls(first, last)
-
-    @classmethod
-    def from_period(cls, period: Any) -> "PeriodWindow":
-        """Build a window from an already resolved :class:`PeriodResult`."""
-        return cls.of(period.period_start, period.period_end)
-
-    def contains(self, moment: datetime) -> bool:
-        return self.start <= moment <= self.end
-
-    def to_dict(self) -> dict[str, str]:
-        return {"start": self.start.isoformat(), "end": self.end.isoformat()}
-
-
-@dataclass(frozen=True)
-class StabilitySample:
-    """A previously observed size/mtime pair for one relative path."""
-
-    size: int
-    modified_at: float
-
-
-@dataclass(frozen=True)
-class ClassificationOverride:
-    """A human decision that replaces the automatic classification."""
-
-    path: str
-    classification: str
-    disposition: str | None = None
-    note: str = ""
-    decided_at: str = ""
-    source: str = "user"
-
-    def __post_init__(self) -> None:
-        if self.classification not in CLASSIFICATIONS:
-            raise WorkdirScanError(f"unknown classification in override: {self.classification}")
-        if self.disposition is not None and self.disposition not in DISPOSITIONS:
-            raise WorkdirScanError(f"unknown disposition in override: {self.disposition}")
-        if not str(self.path).strip():
-            raise WorkdirScanError("an override needs a relative path or glob pattern")
-
-    @property
-    def key(self) -> str:
-        return PurePosixPath(str(self.path).replace("\\", "/")).as_posix()
-
-    def matches(self, relative_path: str) -> bool:
-        pattern = self.key
-        target = PurePosixPath(relative_path).as_posix()
-        if pattern == target:
-            return True
-        return fnmatch.fnmatch(target, pattern)
-
-
-@dataclass(frozen=True)
-class ScannedFile:
-    """One classified file plus every signal that produced the decision."""
-
-    relative_path: str
-    path: str
-    classification: str
-    disposition: str
-    reason: str
-    signal: str
-    extension: str
-    size: int
-    modified_at: str
-    period_state: str
-    stable: bool
-    content_hash: str | None = None
-    version_key: str | None = None
-    duplicate_of: str | None = None
-    overridden_from: str | None = None
-    notes: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["notes"] = list(self.notes)
-        return payload
-
-
-@dataclass(frozen=True)
-class DuplicateGroup:
-    """Byte-identical files found under different names."""
-
-    content_hash: str
-    paths: tuple[str, ...]
-    representative: str
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "content_hash": self.content_hash,
-            "paths": list(self.paths),
-            "representative": self.representative,
-        }
-
-
-@dataclass(frozen=True)
-class VersionCandidateGroup:
-    """Files that look like versions of one another but differ in content."""
-
-    version_key: str
-    paths: tuple[str, ...]
-    selected: None = None
-    reason: str = "version_candidates_require_confirmation"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "version_key": self.version_key,
-            "paths": list(self.paths),
-            "selected": None,
-            "reason": self.reason,
-        }
-
-
-@dataclass(frozen=True)
-class ScanResult:
-    """The complete read-only report for one working-directory scan."""
-
-    scope: ScanScope
-    files: tuple[ScannedFile, ...]
-    duplicate_groups: tuple[DuplicateGroup, ...] = ()
-    version_groups: tuple[VersionCandidateGroup, ...] = ()
-    skipped_paths: tuple[dict[str, str], ...] = ()
-    accessed_paths: tuple[str, ...] = ()
-    period_window: PeriodWindow | None = None
-    stability_window_seconds: float = DEFAULT_STABILITY_WINDOW_SECONDS
-    scanned_at: str = ""
-
-    def by_disposition(self, disposition: str) -> tuple[ScannedFile, ...]:
-        return tuple(item for item in self.files if item.disposition == disposition)
-
-    def by_classification(self, classification: str) -> tuple[ScannedFile, ...]:
-        return tuple(item for item in self.files if item.classification == classification)
-
-    @property
-    def included(self) -> tuple[ScannedFile, ...]:
-        return self.by_disposition(INCLUDE)
-
-    @property
-    def review(self) -> tuple[ScannedFile, ...]:
-        return self.by_disposition(REVIEW)
-
-    @property
-    def excluded(self) -> tuple[ScannedFile, ...]:
-        return self.by_disposition(EXCLUDE)
-
-    def entry(self, relative_path: str) -> ScannedFile | None:
-        target = PurePosixPath(relative_path.replace("\\", "/")).as_posix()
-        for item in self.files:
-            if item.relative_path == target:
-                return item
-        return None
-
-    def counts(self) -> dict[str, int]:
-        counts = {name: 0 for name in DISPOSITIONS}
-        for item in self.files:
-            counts[item.disposition] += 1
-        return counts
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "format": "excel-ops-workdir-scan-v1",
-            "scanned_at": self.scanned_at,
-            "scope": self.scope.to_dict(),
-            "period_window": self.period_window.to_dict() if self.period_window else None,
-            "stability_window_seconds": self.stability_window_seconds,
-            "counts": self.counts(),
-            "classification_counts": {
-                name: len(self.by_classification(name)) for name in CLASSIFICATIONS
-            },
-            "files": [item.to_dict() for item in self.files],
-            "duplicate_groups": [group.to_dict() for group in self.duplicate_groups],
-            "version_groups": [group.to_dict() for group in self.version_groups],
-            "skipped_paths": [dict(item) for item in self.skipped_paths],
-            "accessed_paths": list(self.accessed_paths),
-        }
-
-    def stability_samples(self) -> dict[str, StabilitySample]:
-        """Return this run's size/mtime observations for a follow-up scan."""
-        samples: dict[str, StabilitySample] = {}
-        for item in self.files:
-            samples[item.relative_path] = StabilitySample(
-                item.size, datetime.fromisoformat(item.modified_at).timestamp()
-            )
-        return samples
-
-
-def _as_utc(value: date | datetime, *, end_of_day: bool = False) -> datetime:
-    """Normalise a date or datetime to an aware UTC instant.
-
-    A bare ``date`` marks the whole day, so a period end covers that day rather
-    than cutting it off at midnight and silently dropping the final day's files.
-    """
-    if isinstance(value, datetime):
-        moment = value
-    else:
-        boundary = _DAY_END if end_of_day else _DAY_START
-        moment = datetime.combine(value, boundary)
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
-
-
-def _read_bytes(path: Path) -> bytes:
-    """The single place file content is read, so access stays auditable."""
-    return path.read_bytes()
-
-
-def _hash_file(path: Path) -> str:
-    return hashlib.sha256(_read_bytes(path)).hexdigest()
-
-
-def _strip_version_decorations(stem: str) -> str:
-    current = stem.strip()
-    changed = True
-    while changed:
-        changed = False
-        for pattern in _VERSION_DECORATIONS:
-            stripped = pattern.sub("", current).strip(" _-")
-            if stripped and stripped != current:
-                current = stripped
-                changed = True
-    return current or stem.strip()
-
-
-def version_key(name: str) -> str:
-    """Return the shared key for ``final.xlsx`` / ``final (1).xlsx`` style names."""
-    stem = Path(name).stem
-    base = _strip_version_decorations(stem)
-    return re.sub(r"[\s_-]+", " ", base).strip().casefold()
-
-
-def sync_artifact_reason(name: str) -> str | None:
-    """Return why ``name`` looks like a cloud-sync leftover, or ``None``."""
-    lowered = name.casefold()
-    if any(lowered.startswith(prefix.casefold()) for prefix in _LOCK_PREFIXES):
-        return "sync_artifact_lock_file"
-    suffix = Path(name).suffix.casefold()
-    if suffix in _INCOMPLETE_EXTENSIONS:
-        return "sync_artifact_incomplete_download"
-    if lowered.endswith("~"):
-        return "sync_artifact_editor_backup"
-    if _CONFLICT_PATTERN.search(name):
-        return "sync_artifact_conflict_copy"
-    return None
-
-
-def workbook_metadata_signal(path: Path) -> tuple[str, str] | None:
-    """Return ``(classification, note)`` from workbook metadata, if it is decisive.
-
-    Only sheet titles and document properties are inspected, with
-    ``read_only=True``; no macro is executed and the workbook is not modified.
-    """
-    if path.suffix.casefold() not in WORKBOOK_EXTENSIONS:
-        return None
-    try:
-        workbook = load_workbook(path, read_only=True, data_only=True)
-    except (InvalidFileException, BadZipFile, OSError, KeyError, ValueError):
-        # An unreadable or not-actually-a-workbook file yields no metadata
-        # signal; it is never treated as evidence for a classification.
-        return None
-    try:
-        titles = list(workbook.sheetnames)
-        properties = workbook.properties
-        descriptors = [
-            str(getattr(properties, name, "") or "")
-            for name in ("title", "category", "keywords", "subject")
-        ]
-    except (AttributeError, KeyError, ValueError):
-        return None
-    finally:
-        workbook.close()
-
-    haystack = " ".join(titles + descriptors)
-    if _REVIEW_RETURN_PATTERN.search(haystack):
-        return REVIEW_RETURN, "workbook metadata names a review pack"
-    if _TEMPLATE_PATTERN.search(haystack):
-        return TEMPLATE, "workbook metadata names a template"
-    if _PRIOR_DELIVERY_PATTERN.search(haystack):
-        return PRIOR_DELIVERY, "workbook metadata names a delivery"
-    return None
-
-
-def _name_signal(name: str) -> tuple[str, str] | None:
-    stem = Path(name).stem
-    if Path(name).suffix.casefold() in TEMPLATE_EXTENSIONS:
-        return TEMPLATE, "template file extension"
-    # Review returns are checked before deliveries: a returned review pack for a
-    # delivered file usually carries both words.
-    if _REVIEW_RETURN_PATTERN.search(stem):
-        return REVIEW_RETURN, "filename names a review return"
-    if _TEMPLATE_PATTERN.search(stem):
-        return TEMPLATE, "filename names a template"
-    if _PRIOR_DELIVERY_PATTERN.search(stem):
-        return PRIOR_DELIVERY, "filename names a delivery"
-    return None
 
 
 def _walk(scope: ScanScope, skipped: list[dict[str, str]]) -> list[Path]:
@@ -607,128 +222,6 @@ def scan_workdir(
         stability_window_seconds=stability_window_seconds,
         scanned_at=moment.isoformat(),
     )
-
-
-def _scan_file(
-    resolved: Path,
-    relative: str,
-    stat: os.stat_result,
-    stable: bool,
-    period_window: PeriodWindow | None,
-) -> tuple[ScannedFile, bool]:
-    """Classify one file; the flag says whether its content was opened."""
-
-    modified = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
-    extension = resolved.suffix.casefold()
-    entry = ScannedFile(
-        relative_path=relative,
-        path=str(resolved),
-        classification=UNKNOWN,
-        disposition=REVIEW,
-        reason="not_classified",
-        signal="none",
-        extension=extension,
-        size=stat.st_size,
-        modified_at=modified.isoformat(),
-        period_state="unknown",
-        stable=stable,
-    )
-
-    artifact = sync_artifact_reason(resolved.name)
-    if artifact is not None:
-        disposition = REVIEW if artifact == "sync_artifact_conflict_copy" else EXCLUDE
-        return replace(entry, disposition=disposition, reason=artifact, signal="name_pattern"), False
-
-    if extension not in READABLE_EXTENSIONS:
-        return (
-            replace(entry, disposition=EXCLUDE, reason="unsupported_extension", signal="extension"),
-            False,
-        )
-
-    if not stable:
-        # Never opened: an unstable file may be mid-write or mid-sync, so it
-        # is not hashed and not classified from content.
-        return (
-            replace(entry, disposition=REVIEW, reason="not_stable_yet", signal="stability_window"),
-            False,
-        )
-
-    entry = replace(entry, content_hash=_hash_file(resolved), version_key=version_key(resolved.name))
-    classification, signal, note = _classify_stable(resolved, modified, period_window)
-    return _with_classification(entry, classification, signal, note, modified, period_window), True
-
-
-def _with_classification(
-    entry: ScannedFile,
-    classification: str,
-    signal: str,
-    note: str,
-    modified: datetime,
-    period_window: PeriodWindow | None,
-) -> ScannedFile:
-    """Turn a stable file's classification into its disposition and reason."""
-
-    if classification == INPUT:
-        entry = replace(entry, disposition=INCLUDE, reason="current_period_input", period_state="current")
-    elif classification == PRIOR_DELIVERY and signal == "modification_time":
-        entry = replace(
-            entry,
-            disposition=EXCLUDE,
-            reason="historical_outside_current_period",
-            period_state="historical",
-        )
-    elif classification == UNKNOWN:
-        entry = replace(entry, disposition=REVIEW, reason=note or "classification_undetermined")
-    else:
-        period_state = "current" if period_window and period_window.contains(modified) else "historical"
-        entry = replace(
-            entry,
-            disposition=EXCLUDE if classification == PRIOR_DELIVERY else REVIEW,
-            reason=f"classified_as_{classification}",
-            period_state=period_state,
-        )
-    notes = (note,) if note else ()
-    return replace(entry, classification=classification, signal=signal, notes=notes)
-
-
-def _is_stable(
-    size: int,
-    modified_at: float,
-    now: datetime,
-    window_seconds: float,
-    previous: StabilitySample | None,
-) -> bool:
-    # ``modified_at`` survives a round trip through an ISO string, which is
-    # microsecond-precise, so compare within that resolution.
-    if previous is not None and (
-        previous.size != size or abs(previous.modified_at - modified_at) > 1e-6
-    ):
-        return False
-    return (now.timestamp() - modified_at) >= window_seconds
-
-
-def _classify_stable(
-    path: Path,
-    modified: datetime,
-    period_window: PeriodWindow | None,
-) -> tuple[str, str, str]:
-    named = _name_signal(path.name)
-    if named is not None:
-        classification, note = named
-        return classification, "name_pattern", note
-
-    metadata = workbook_metadata_signal(path)
-    if metadata is not None:
-        classification, note = metadata
-        return classification, "workbook_metadata", note
-
-    if period_window is None:
-        return UNKNOWN, "none", "no_period_window_declared"
-    if period_window.contains(modified):
-        return INPUT, "modification_time", "modified inside the declared current period"
-    if modified < period_window.start:
-        return PRIOR_DELIVERY, "modification_time", "modified before the declared current period"
-    return UNKNOWN, "modification_time", "modified after the declared current period"
 
 
 def _group_duplicates(

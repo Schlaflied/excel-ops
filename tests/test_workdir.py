@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from excel_ops import workdir
+from excel_ops import workdir_classify
 from excel_ops.cli import main
 from excel_ops.workdir import (
     EXCLUDE,
@@ -210,9 +210,9 @@ def test_a_file_still_being_written_is_never_read_or_included(tmp_path, monkeypa
     mid_write = _file(work, "mid-write-hours.csv", "a,b\n", when=NOW.timestamp() - 1)
 
     opened: list[str] = []
-    real_read = workdir._read_bytes
+    real_read = workdir_classify._read_bytes
     monkeypatch.setattr(
-        workdir, "_read_bytes", lambda path: (opened.append(str(path)), real_read(path))[1]
+        workdir_classify, "_read_bytes", lambda path: (opened.append(str(path)), real_read(path))[1]
     )
 
     result = _scan(work)
@@ -316,9 +316,9 @@ def test_files_outside_the_authorized_scope_are_never_accessed(tmp_path, monkeyp
     _file(forbidden, "nested/more-secrets.csv", "ssn\n456\n")
 
     touched: list[str] = []
-    real_read = workdir._read_bytes
+    real_read = workdir_classify._read_bytes
     monkeypatch.setattr(
-        workdir, "_read_bytes", lambda path: (touched.append(str(path)), real_read(path))[1]
+        workdir_classify, "_read_bytes", lambda path: (touched.append(str(path)), real_read(path))[1]
     )
 
     result = _scan(authorized)
