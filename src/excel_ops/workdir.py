@@ -568,12 +568,7 @@ def scan_workdir(
     scope = roots if isinstance(roots, ScanScope) else ScanScope.of(roots, recursive=recursive)
     if period_window is None and period is not None:
         period_window = PeriodWindow.from_period(period)
-    if now is None:
-        moment = datetime.now(timezone.utc)
-    elif now.tzinfo is None:
-        moment = now.replace(tzinfo=timezone.utc)
-    else:
-        moment = now.astimezone(timezone.utc)
+    moment = datetime.now(timezone.utc) if now is None else _as_utc(now)
     if stability_window_seconds < 0:
         raise WorkdirScanError("stability window must not be negative")
 
@@ -590,70 +585,12 @@ def scan_workdir(
         except OSError as error:
             skipped.append({"path": str(resolved), "reason": f"unreadable_file:{error.strerror or 'error'}"})
             continue
-        modified = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
-        extension = resolved.suffix.casefold()
         previous = (previous_samples or {}).get(relative)
         stable = _is_stable(stat.st_size, stat.st_mtime, moment, stability_window_seconds, previous)
-        entry = ScannedFile(
-            relative_path=relative,
-            path=str(resolved),
-            classification=UNKNOWN,
-            disposition=REVIEW,
-            reason="not_classified",
-            signal="none",
-            extension=extension,
-            size=stat.st_size,
-            modified_at=modified.isoformat(),
-            period_state="unknown",
-            stable=stable,
-        )
-
-        artifact = sync_artifact_reason(resolved.name)
-        if artifact is not None:
-            disposition = REVIEW if artifact == "sync_artifact_conflict_copy" else EXCLUDE
-            entries.append(replace(entry, disposition=disposition, reason=artifact, signal="name_pattern"))
-            continue
-
-        if extension not in READABLE_EXTENSIONS:
-            entries.append(
-                replace(entry, disposition=EXCLUDE, reason="unsupported_extension", signal="extension")
-            )
-            continue
-
-        if not stable:
-            # Never opened: an unstable file may be mid-write or mid-sync, so it
-            # is not hashed and not classified from content.
-            entries.append(
-                replace(entry, disposition=REVIEW, reason="not_stable_yet", signal="stability_window")
-            )
-            continue
-
-        accessed.append(str(resolved))
-        content_hash = _hash_file(resolved)
-        entry = replace(entry, content_hash=content_hash, version_key=version_key(resolved.name))
-
-        classification, signal, note = _classify_stable(resolved, modified, period_window)
-        notes = (note,) if note else ()
-        if classification == INPUT:
-            entry = replace(entry, disposition=INCLUDE, reason="current_period_input", period_state="current")
-        elif classification == PRIOR_DELIVERY and signal == "modification_time":
-            entry = replace(
-                entry,
-                disposition=EXCLUDE,
-                reason="historical_outside_current_period",
-                period_state="historical",
-            )
-        elif classification == UNKNOWN:
-            entry = replace(entry, disposition=REVIEW, reason=note or "classification_undetermined")
-        else:
-            period_state = "current" if period_window and period_window.contains(modified) else "historical"
-            entry = replace(
-                entry,
-                disposition=EXCLUDE if classification == PRIOR_DELIVERY else REVIEW,
-                reason=f"classified_as_{classification}",
-                period_state=period_state,
-            )
-        entries.append(replace(entry, classification=classification, signal=signal, notes=notes))
+        entry, opened = _scan_file(resolved, relative, stat, stable, period_window)
+        if opened:
+            accessed.append(str(resolved))
+        entries.append(entry)
 
     duplicates, deduplicated = _group_duplicates(entries)
     versions, grouped = _group_version_candidates(deduplicated)
@@ -670,6 +607,88 @@ def scan_workdir(
         stability_window_seconds=stability_window_seconds,
         scanned_at=moment.isoformat(),
     )
+
+
+def _scan_file(
+    resolved: Path,
+    relative: str,
+    stat: os.stat_result,
+    stable: bool,
+    period_window: PeriodWindow | None,
+) -> tuple[ScannedFile, bool]:
+    """Classify one file; the flag says whether its content was opened."""
+
+    modified = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+    extension = resolved.suffix.casefold()
+    entry = ScannedFile(
+        relative_path=relative,
+        path=str(resolved),
+        classification=UNKNOWN,
+        disposition=REVIEW,
+        reason="not_classified",
+        signal="none",
+        extension=extension,
+        size=stat.st_size,
+        modified_at=modified.isoformat(),
+        period_state="unknown",
+        stable=stable,
+    )
+
+    artifact = sync_artifact_reason(resolved.name)
+    if artifact is not None:
+        disposition = REVIEW if artifact == "sync_artifact_conflict_copy" else EXCLUDE
+        return replace(entry, disposition=disposition, reason=artifact, signal="name_pattern"), False
+
+    if extension not in READABLE_EXTENSIONS:
+        return (
+            replace(entry, disposition=EXCLUDE, reason="unsupported_extension", signal="extension"),
+            False,
+        )
+
+    if not stable:
+        # Never opened: an unstable file may be mid-write or mid-sync, so it
+        # is not hashed and not classified from content.
+        return (
+            replace(entry, disposition=REVIEW, reason="not_stable_yet", signal="stability_window"),
+            False,
+        )
+
+    entry = replace(entry, content_hash=_hash_file(resolved), version_key=version_key(resolved.name))
+    classification, signal, note = _classify_stable(resolved, modified, period_window)
+    return _with_classification(entry, classification, signal, note, modified, period_window), True
+
+
+def _with_classification(
+    entry: ScannedFile,
+    classification: str,
+    signal: str,
+    note: str,
+    modified: datetime,
+    period_window: PeriodWindow | None,
+) -> ScannedFile:
+    """Turn a stable file's classification into its disposition and reason."""
+
+    if classification == INPUT:
+        entry = replace(entry, disposition=INCLUDE, reason="current_period_input", period_state="current")
+    elif classification == PRIOR_DELIVERY and signal == "modification_time":
+        entry = replace(
+            entry,
+            disposition=EXCLUDE,
+            reason="historical_outside_current_period",
+            period_state="historical",
+        )
+    elif classification == UNKNOWN:
+        entry = replace(entry, disposition=REVIEW, reason=note or "classification_undetermined")
+    else:
+        period_state = "current" if period_window and period_window.contains(modified) else "historical"
+        entry = replace(
+            entry,
+            disposition=EXCLUDE if classification == PRIOR_DELIVERY else REVIEW,
+            reason=f"classified_as_{classification}",
+            period_state=period_state,
+        )
+    notes = (note,) if note else ()
+    return replace(entry, classification=classification, signal=signal, notes=notes)
 
 
 def _is_stable(
