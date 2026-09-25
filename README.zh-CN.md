@@ -18,7 +18,7 @@ VLOOKUP 令人头疼的地方从来不只是公式本身。真实表格中的名
 
 它与 [PPT-Ops](https://github.com/luochen211/ppt-ops) 是互补项目：PPT-Ops 把原始材料变成可审查的演示文稿交付物；Excel-Ops 把图片和杂乱的表格输入变成可审查的数据交付物。
 
-Excel-Ops 的核心是先验证、再宣称成功，写入前拒绝沉默猜测。这延续了作者此前作为贡献者在 Career-Ops（一个由他人维护的求职自动化项目）中的设计工作：Career-Ops 的整套 "Jurisdiction Umbrella"（司法辖区总控）机制由作者设计，Excel-Ops 沿用了同一套设计思路；`refresh.mjs` 的系统更新完整性检查也参考了 Career-Ops 的更新流程。两个代码库互不共享代码或数据。作者同时也是 PPT-Ops 的贡献者。
+Excel-Ops 的核心是先验证、再宣称成功，写入前拒绝沉默猜测。这延续了作者此前作为贡献者在 [Career-Ops](https://github.com/career-ops-hq/career-ops)（一个由他人维护的求职自动化项目）中的设计工作：Career-Ops 的整套 "Jurisdiction Umbrella"（司法辖区总控）机制由作者设计，Excel-Ops 沿用了同一套设计思路；`refresh.mjs` 的系统更新完整性检查也参考了 Career-Ops 的更新流程。两个代码库互不共享代码或数据。作者同时也是 PPT-Ops 的贡献者。
 
 ## 在 Agent 中使用
 

@@ -18,7 +18,7 @@ The reason VLOOKUP is annoying was never the formula. It's that real spreadsheet
 
 It's a companion project to [PPT-Ops](https://github.com/luochen211/ppt-ops): PPT-Ops turns source material into a reviewable presentation delivery, Excel-Ops turns images and messy tabular inputs into a reviewable data delivery.
 
-Excel-Ops's verification-first core — data validation before any claim of success — continues design work its author first did as a contributor to Career-Ops, a job-search automation project maintained by others. The author designed Career-Ops's full "Jurisdiction Umbrella" system, and Excel-Ops reuses that same design thinking; `refresh.mjs`'s update-integrity check also follows Career-Ops's update flow. The two codebases share no code or data. The author is also a contributor to PPT-Ops.
+Excel-Ops's verification-first core — data validation before any claim of success — continues design work its author first did as a contributor to [Career-Ops](https://github.com/career-ops-hq/career-ops), a job-search automation project maintained by others. The author designed Career-Ops's full "Jurisdiction Umbrella" system, and Excel-Ops reuses that same design thinking; `refresh.mjs`'s update-integrity check also follows Career-Ops's update flow. The two codebases share no code or data. The author is also a contributor to PPT-Ops.
 
 ## Use with an agent
 
