@@ -24,9 +24,7 @@ OVERSIZED_FUNCTIONS = {
     "template_writer.py:write_template": 127,
 }
 
-OVERSIZED_MODULES = {
-    "delivery.py": 834,
-}
+OVERSIZED_MODULES: dict[str, int] = {}
 
 
 def _modules() -> dict[str, Path]:
