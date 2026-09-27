@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -27,241 +27,272 @@ from .workdir import (
 
 def main(argv: Sequence[str] | None = None) -> None:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments and arguments[0] == "prepare-delivery":
-        prepare = argparse.ArgumentParser(
-            description="Prepare one validated delivery-plan JSON from structured Agent intent"
-        )
-        prepare.parse_args(arguments[1:])
-        try:
-            request = json.load(sys.stdin)
-            if not isinstance(request, dict):
-                raise PlanPreparationError("invalid_request", "request must be a JSON object")
-            report = prepare_delivery_plan(request)
-        except (json.JSONDecodeError, PlanPreparationError) as error:
-            report = {
-                "prepared": False,
-                "status": "blocked",
-                "error": {
-                    "code": getattr(error, "code", "invalid_request_json"),
-                    "message": str(error),
-                },
-            }
-            print(json.dumps(report, ensure_ascii=False))
-            sys.exit(1)
-        print(json.dumps(report, ensure_ascii=False))
+    command = _COMMANDS.get(arguments[0]) if arguments else None
+    if command is not None:
+        command(arguments[1:])
         return
+    _run_pipeline(arguments)
 
-    if arguments and arguments[0] == "deliver":
-        deliver = argparse.ArgumentParser(
-            description="Ingest, match, confirm, write a template copy, and verify the delivered file"
-        )
-        deliver.add_argument("config", help="JSON delivery configuration with inputs and targets")
-        deliver.add_argument("--dry-run", action="store_true", help="Return the plan without touching files")
-        deliver.add_argument("--recipe", help="Project Recipe JSON used to reuse confirmed decisions")
-        deliver.add_argument("--result", help="Write the machine-readable run result to this JSON file")
-        deliver.add_argument(
-            "--run-state",
-            nargs="?",
-            const="",
-            help=(
-                "Enable whole-run idempotency: an unchanged rerun of a successful run is a no-op. "
-                "Optionally give the run-record path (default: <delivery_dir>/.excel-ops/idempotency.json)"
-            ),
-        )
-        deliver.add_argument(
-            "--task-key",
-            help="Name this periodic task, so several tasks can share one run-record file",
-        )
-        deliver.add_argument(
-            "--template-profile-version",
-            help="Template Profile version marker folded into the run fingerprint",
-        )
-        deliver.add_argument(
-            "--no-manifest",
-            action="store_true",
-            help=(
-                "Do not write the <output>.manifest.json / .manifest.txt evidence files "
-                "next to each delivered workbook; the manifest is still returned in the result"
-            ),
-        )
-        args = deliver.parse_args(arguments[1:])
-        if args.task_key and args.run_state is None:
-            deliver.error("--task-key requires --run-state")
-        if args.run_state is not None and args.no_manifest:
-            deliver.error("--no-manifest cannot be combined with --run-state")
-        config_path = Path(args.config)
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-        targets, options = load_delivery_targets(payload, base_dir=config_path.parent)
-        if args.recipe:
-            options["recipe_path"] = Path(args.recipe)
-        inputs = options.pop("inputs")
-        # Format selection is validated at plan-load time.  Export adapters
-        # consume this contract in the export stage; the legacy XLSX delivery
-        # runner must not receive these future-only options.
-        export_formats = options.pop("export_formats")
-        export_selection = options.pop("export_selection")
-        if args.run_state is not None:
-            options["idempotency"] = IdempotencyOptions(
-                state_path=args.run_state or None,
-                task_key=args.task_key,
-                template_profile_version=args.template_profile_version,
-            )
-        attached_exports = []
 
-        def attach_exports(run, manifests):
-            source_workbooks = tuple(
-                item.delivery_path for item in run.targets if item.delivery_path
-            )
-            exports_by_source = {
-                path: export_delivery_artifacts(
-                    path, formats=export_formats, selection=export_selection
-                )
-                for path in source_workbooks
-            }
-            attached_exports.extend(
-                artifact
-                for artifacts in exports_by_source.values()
-                for artifact in artifacts
-            )
-            return tuple(
-                replace(
-                    manifest,
-                    exports=tuple(
-                        item.to_dict() for item in exports_by_source.get(manifest.output, ())
-                    ),
-                )
-                for manifest in manifests
-            )
-
-        result = run_delivery(
-            inputs,
-            targets,
-            dry_run=args.dry_run,
-            write_manifest=not args.no_manifest,
-            artifact_hook=attach_exports if not args.dry_run else None,
-            artifact_fingerprint={
-                "formats": list(export_formats),
-                "selection": export_selection,
+def _prepare_delivery(arguments: Sequence[str]) -> None:
+    prepare = argparse.ArgumentParser(
+        description="Prepare one validated delivery-plan JSON from structured Agent intent"
+    )
+    prepare.parse_args(arguments)
+    try:
+        request = json.load(sys.stdin)
+        if not isinstance(request, dict):
+            raise PlanPreparationError("invalid_request", "request must be a JSON object")
+        report = prepare_delivery_plan(request)
+    except (json.JSONDecodeError, PlanPreparationError) as error:
+        report = {
+            "prepared": False,
+            "status": "blocked",
+            "error": {
+                "code": getattr(error, "code", "invalid_request_json"),
+                "message": str(error),
             },
-            **options,
-        )
-        report = result.to_dict()
-        report["export_selection"] = export_selection
-        report["exports"] = []
-        if args.dry_run:
-            report["export_plan"] = {
-                "formats": list(export_formats),
-                "selection": export_selection,
-                "source_workbooks": [item.delivery_path for item in result.plan.targets],
-            }
-        elif result.delivered:
-            report["exports"] = [artifact.to_dict() for artifact in attached_exports]
-        if args.result:
-            Path(args.result).write_text(
-                json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
-            )
-        print(json.dumps(report, ensure_ascii=False, default=str))
-        # A no-op is a success: the declared delivery is already in place and
-        # nothing changed, so there is nothing to deliver and nothing failed.
-        if report["failures"] or (
-            not args.dry_run and not report["delivered"] and not result.no_op
-        ):
-            sys.exit(1)
-        return
+        }
+        print(json.dumps(report, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(report, ensure_ascii=False))
 
-    if arguments and arguments[0] == "scan-workdir":
-        scan = argparse.ArgumentParser(
-            description="Read-only scan of authorized working directories: what is included, excluded, and why"
-        )
-        scan.add_argument("directory", help="An authorized directory to scan")
-        scan.add_argument(
-            "--also-allow",
-            action="append",
-            default=[],
-            metavar="DIR",
-            help="Additional authorized directory; nothing outside the allowlist is accessed",
-        )
-        scan.add_argument("--no-recursive", action="store_true", help="Scan only the top level of each root")
-        scan.add_argument("--period-start", help="Current business period start, YYYY-MM-DD")
-        scan.add_argument("--period-end", help="Current business period end, YYYY-MM-DD")
-        scan.add_argument(
-            "--stability-window",
-            type=float,
-            default=DEFAULT_STABILITY_WINDOW_SECONDS,
-            help="Seconds a file's size and modification time must already be unchanged",
-        )
-        scan.add_argument("--recipe", help="Workdir Recipe JSON with saved classification overrides")
-        scan.add_argument(
-            "--override",
-            action="append",
-            default=[],
-            metavar="PATH=CLASSIFICATION[:DISPOSITION]",
-            help="Override one relative path or glob; repeatable",
-        )
-        scan.add_argument("--save-recipe", help="Write the supplied overrides to a reusable Recipe file")
-        scan.add_argument("--result", help="Write the machine-readable scan report to this JSON file")
-        scan.add_argument("--json", action="store_true", help="Print JSON instead of the readable dry-run report")
-        args = scan.parse_args(arguments[1:])
-        if bool(args.period_start) != bool(args.period_end):
-            scan.error("--period-start and --period-end must be supplied together")
-        window = None
-        if args.period_start:
-            window = PeriodWindow.of(
-                date.fromisoformat(args.period_start), date.fromisoformat(args.period_end)
-            )
-        overrides = []
-        for value in args.override:
-            if "=" not in value:
-                scan.error("--override must use PATH=CLASSIFICATION[:DISPOSITION]")
-            target, decision = value.split("=", 1)
-            classification, _, disposition = decision.partition(":")
-            overrides.append(
-                ClassificationOverride(
-                    path=target.strip(),
-                    classification=classification.strip(),
-                    disposition=disposition.strip() or None,
-                    source="cli",
-                )
-            )
-        scope = ScanScope.of(
-            [args.directory, *args.also_allow], recursive=not args.no_recursive
-        )
-        result = scan_workdir(
-            scope,
-            period_window=window,
-            stability_window_seconds=args.stability_window,
-            overrides=overrides,
-            recipe_path=args.recipe,
-        )
-        if args.save_recipe:
-            save_workdir_recipe(overrides, args.save_recipe)
-        report = result.to_dict()
-        if args.result:
-            Path(args.result).write_text(
-                json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
-        print(json.dumps(report, ensure_ascii=False) if args.json else format_dry_run(result))
-        return
 
-    if arguments and arguments[0] == "schema-drift":
-        drift = argparse.ArgumentParser(description="Compare workbook schemas")
-        drift.add_argument("inputs", nargs="+", help="Baseline workbook followed by candidates")
-        drift.add_argument("--output", required=True, help="Machine-readable JSON report")
-        drift.add_argument("--mapping", help="JSON file containing confirmed_mappings")
-        drift.add_argument("--confirm", action="append", default=[], metavar="CANDIDATE=BASELINE", help="Persist a human-confirmed mapping before comparison")
-        drift.add_argument("--key-field", help="Field used to detect row-granularity changes")
-        args = drift.parse_args(arguments[1:])
-        if args.confirm and not args.mapping:
-            drift.error("--confirm requires --mapping")
-        for value in args.confirm:
-            if "=" not in value:
-                drift.error("--confirm must use CANDIDATE=BASELINE")
-            source, target = value.split("=", 1)
-            save_confirmed_mapping(args.mapping, source.strip(), target.strip())
-        output = write_drift_report(args.inputs, args.output, mapping_path=args.mapping, key_field=args.key_field)
-        print(json.dumps({"output": str(output)}, ensure_ascii=False))
-        return
+def _deliver_parser() -> argparse.ArgumentParser:
+    deliver = argparse.ArgumentParser(
+        description="Ingest, match, confirm, write a template copy, and verify the delivered file"
+    )
+    deliver.add_argument("config", help="JSON delivery configuration with inputs and targets")
+    deliver.add_argument("--dry-run", action="store_true", help="Return the plan without touching files")
+    deliver.add_argument("--recipe", help="Project Recipe JSON used to reuse confirmed decisions")
+    deliver.add_argument("--result", help="Write the machine-readable run result to this JSON file")
+    deliver.add_argument(
+        "--run-state",
+        nargs="?",
+        const="",
+        help=(
+            "Enable whole-run idempotency: an unchanged rerun of a successful run is a no-op. "
+            "Optionally give the run-record path (default: <delivery_dir>/.excel-ops/idempotency.json)"
+        ),
+    )
+    deliver.add_argument(
+        "--task-key",
+        help="Name this periodic task, so several tasks can share one run-record file",
+    )
+    deliver.add_argument(
+        "--template-profile-version",
+        help="Template Profile version marker folded into the run fingerprint",
+    )
+    deliver.add_argument(
+        "--no-manifest",
+        action="store_true",
+        help=(
+            "Do not write the <output>.manifest.json / .manifest.txt evidence files "
+            "next to each delivered workbook; the manifest is still returned in the result"
+        ),
+    )
+    return deliver
 
+
+def _deliver(arguments: Sequence[str]) -> None:
+    deliver = _deliver_parser()
+    args = deliver.parse_args(arguments)
+    if args.task_key and args.run_state is None:
+        deliver.error("--task-key requires --run-state")
+    if args.run_state is not None and args.no_manifest:
+        deliver.error("--no-manifest cannot be combined with --run-state")
+    config_path = Path(args.config)
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    targets, options = load_delivery_targets(payload, base_dir=config_path.parent)
+    if args.recipe:
+        options["recipe_path"] = Path(args.recipe)
+    inputs = options.pop("inputs")
+    # Format selection is validated at plan-load time.  Export adapters
+    # consume this contract in the export stage; the legacy XLSX delivery
+    # runner must not receive these future-only options.
+    export_formats = options.pop("export_formats")
+    export_selection = options.pop("export_selection")
+    if args.run_state is not None:
+        options["idempotency"] = IdempotencyOptions(
+            state_path=args.run_state or None,
+            task_key=args.task_key,
+            template_profile_version=args.template_profile_version,
+        )
+    attached_exports: list = []
+    result = run_delivery(
+        inputs,
+        targets,
+        dry_run=args.dry_run,
+        write_manifest=not args.no_manifest,
+        artifact_hook=(
+            _export_hook(export_formats, export_selection, attached_exports)
+            if not args.dry_run
+            else None
+        ),
+        artifact_fingerprint={
+            "formats": list(export_formats),
+            "selection": export_selection,
+        },
+        **options,
+    )
+    _report_delivery(args, result, export_formats, export_selection, attached_exports)
+
+
+def _export_hook(export_formats, export_selection, attached_exports: list) -> Callable:
+    """Export each delivered workbook and attach the artifacts to its Manifest."""
+
+    def attach_exports(run, manifests):
+        source_workbooks = tuple(
+            item.delivery_path for item in run.targets if item.delivery_path
+        )
+        exports_by_source = {
+            path: export_delivery_artifacts(
+                path, formats=export_formats, selection=export_selection
+            )
+            for path in source_workbooks
+        }
+        attached_exports.extend(
+            artifact
+            for artifacts in exports_by_source.values()
+            for artifact in artifacts
+        )
+        return tuple(
+            replace(
+                manifest,
+                exports=tuple(
+                    item.to_dict() for item in exports_by_source.get(manifest.output, ())
+                ),
+            )
+            for manifest in manifests
+        )
+
+    return attach_exports
+
+
+def _report_delivery(args, result, export_formats, export_selection, attached_exports) -> None:
+    report = result.to_dict()
+    report["export_selection"] = export_selection
+    report["exports"] = []
+    if args.dry_run:
+        report["export_plan"] = {
+            "formats": list(export_formats),
+            "selection": export_selection,
+            "source_workbooks": [item.delivery_path for item in result.plan.targets],
+        }
+    elif result.delivered:
+        report["exports"] = [artifact.to_dict() for artifact in attached_exports]
+    if args.result:
+        Path(args.result).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
+        )
+    print(json.dumps(report, ensure_ascii=False, default=str))
+    # A no-op is a success: the declared delivery is already in place and
+    # nothing changed, so there is nothing to deliver and nothing failed.
+    if report["failures"] or (
+        not args.dry_run and not report["delivered"] and not result.no_op
+    ):
+        sys.exit(1)
+
+
+def _scan_parser() -> argparse.ArgumentParser:
+    scan = argparse.ArgumentParser(
+        description="Read-only scan of authorized working directories: what is included, excluded, and why"
+    )
+    scan.add_argument("directory", help="An authorized directory to scan")
+    scan.add_argument(
+        "--also-allow",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="Additional authorized directory; nothing outside the allowlist is accessed",
+    )
+    scan.add_argument("--no-recursive", action="store_true", help="Scan only the top level of each root")
+    scan.add_argument("--period-start", help="Current business period start, YYYY-MM-DD")
+    scan.add_argument("--period-end", help="Current business period end, YYYY-MM-DD")
+    scan.add_argument(
+        "--stability-window",
+        type=float,
+        default=DEFAULT_STABILITY_WINDOW_SECONDS,
+        help="Seconds a file's size and modification time must already be unchanged",
+    )
+    scan.add_argument("--recipe", help="Workdir Recipe JSON with saved classification overrides")
+    scan.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        metavar="PATH=CLASSIFICATION[:DISPOSITION]",
+        help="Override one relative path or glob; repeatable",
+    )
+    scan.add_argument("--save-recipe", help="Write the supplied overrides to a reusable Recipe file")
+    scan.add_argument("--result", help="Write the machine-readable scan report to this JSON file")
+    scan.add_argument("--json", action="store_true", help="Print JSON instead of the readable dry-run report")
+    return scan
+
+
+def _scan_workdir(arguments: Sequence[str]) -> None:
+    scan = _scan_parser()
+    args = scan.parse_args(arguments)
+    if bool(args.period_start) != bool(args.period_end):
+        scan.error("--period-start and --period-end must be supplied together")
+    window = None
+    if args.period_start:
+        window = PeriodWindow.of(
+            date.fromisoformat(args.period_start), date.fromisoformat(args.period_end)
+        )
+    overrides = []
+    for value in args.override:
+        if "=" not in value:
+            scan.error("--override must use PATH=CLASSIFICATION[:DISPOSITION]")
+        target, decision = value.split("=", 1)
+        classification, _, disposition = decision.partition(":")
+        overrides.append(
+            ClassificationOverride(
+                path=target.strip(),
+                classification=classification.strip(),
+                disposition=disposition.strip() or None,
+                source="cli",
+            )
+        )
+    scope = ScanScope.of(
+        [args.directory, *args.also_allow], recursive=not args.no_recursive
+    )
+    result = scan_workdir(
+        scope,
+        period_window=window,
+        stability_window_seconds=args.stability_window,
+        overrides=overrides,
+        recipe_path=args.recipe,
+    )
+    if args.save_recipe:
+        save_workdir_recipe(overrides, args.save_recipe)
+    report = result.to_dict()
+    if args.result:
+        Path(args.result).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    print(json.dumps(report, ensure_ascii=False) if args.json else format_dry_run(result))
+
+
+def _schema_drift(arguments: Sequence[str]) -> None:
+    drift = argparse.ArgumentParser(description="Compare workbook schemas")
+    drift.add_argument("inputs", nargs="+", help="Baseline workbook followed by candidates")
+    drift.add_argument("--output", required=True, help="Machine-readable JSON report")
+    drift.add_argument("--mapping", help="JSON file containing confirmed_mappings")
+    drift.add_argument("--confirm", action="append", default=[], metavar="CANDIDATE=BASELINE", help="Persist a human-confirmed mapping before comparison")
+    drift.add_argument("--key-field", help="Field used to detect row-granularity changes")
+    args = drift.parse_args(arguments)
+    if args.confirm and not args.mapping:
+        drift.error("--confirm requires --mapping")
+    for value in args.confirm:
+        if "=" not in value:
+            drift.error("--confirm must use CANDIDATE=BASELINE")
+        source, target = value.split("=", 1)
+        save_confirmed_mapping(args.mapping, source.strip(), target.strip())
+    output = write_drift_report(args.inputs, args.output, mapping_path=args.mapping, key_field=args.key_field)
+    print(json.dumps({"output": str(output)}, ensure_ascii=False))
+
+
+def _run_pipeline(arguments: Sequence[str]) -> None:
     parser = argparse.ArgumentParser(description="Turn reviewed extraction records into an auditable Excel delivery")
     parser.add_argument("input", help="Input .xlsx, .xlsm, .csv, or provider-neutral image extraction .json")
     parser.add_argument("output", help="Output .xlsx path")
@@ -271,6 +302,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     if not args.input or not args.output:
         parser.error("input and output are required")
     print(json.dumps(run_pipeline(args.input, args.output, args.confidence_threshold, args.locale), ensure_ascii=False))
+
+
+_COMMANDS: dict[str, Callable[[Sequence[str]], None]] = {
+    "prepare-delivery": _prepare_delivery,
+    "deliver": _deliver,
+    "scan-workdir": _scan_workdir,
+    "schema-drift": _schema_drift,
+}
 
 
 if __name__ == "__main__":

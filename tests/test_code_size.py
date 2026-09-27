@@ -17,7 +17,6 @@ MAX_FUNCTION_LINES = 100
 MAX_MODULE_LINES = 800
 
 OVERSIZED_FUNCTIONS = {
-    "cli.py:main": 246,
     "delivery.py:run_delivery": 166,
     "delivery.py:_finish_run": 108,
     "delivery_write.py:_write_target": 137,
