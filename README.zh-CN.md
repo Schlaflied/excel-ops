@@ -6,7 +6,7 @@
 
 中文 | [English](README.md)
 
-最新版本：**[v0.5.0 — Agent 可靠交付系统](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0)**
+最新版本：**[v0.5.1 — 可维护性整理](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.1)**
 
 ### 我讨厌 VLOOKUP。这就是原因。
 
@@ -149,11 +149,11 @@ excel-ops deliver delivery-plan.json --run-state --task-key weekly-north
 
 ## 当前能力
 
-**v0.5.0 是当前最新版本。** 它包含完整的本地 Phase 1 交付基础：业务周期解析、安全模板写回、独立验证、`run_delivery(...)`、工作目录扫描、整次运行幂等、交付 Manifest、语义化数字格式、跨平台 refresh/apply/rollback、本地 Agent MCP、经过验证的 XLSX/CSV/PDF 交付，以及从版本感知公式规划到独立复算交付的完整链路。
+**v0.5.1 是当前最新版本。** 这是在 v0.5.0 之上的可维护性版本，不改变任何行为：交付、工作目录扫描、CLI、PDF 校验和模板写入中过长的代码被拆成了有名字的步骤，并新增 CI 代码长度检查，新函数不超过 100 行、新模块不超过 800 行。连同 v0.5.0，它包含完整的本地 Phase 1 交付基础：业务周期解析、安全模板写回、独立验证、`run_delivery(...)`、工作目录扫描、整次运行幂等、交付 Manifest、语义化数字格式、跨平台 refresh/apply/rollback、本地 Agent MCP、经过验证的 XLSX/CSV/PDF 交付，以及从版本感知公式规划到独立复算交付的完整链路。
 
 MCP 服务把 `scan_workdir`、`prepare_delivery`、`plan_delivery`、`run_delivery` 暴露为结构化工具，内部仍使用同一套 Python 核心（[文档](docs/mcp.zh-CN.md)）。公式模式在 Windows 上使用 Microsoft Excel，或使用 LibreOffice 独立复算；两者都不可用时，交付会失败，不会宣称未经验证的成功。
 
-“模块已合并”“仓库测试通过”“落盘文件已验证”和“已发布 Release”仍是四种不同的证据。已发布范围和已知缺口见 [v0.5.0 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0)。
+“模块已合并”“仓库测试通过”“落盘文件已验证”和“已发布 Release”仍是四种不同的证据。已发布范围和已知缺口见 [v0.5.1 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.1) 和 [v0.5.0 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0)。
 
 [查看完整能力清单、实现状态、安全边界以及对应的 Issue/PR](docs/capabilities.zh-CN.md)。
 
