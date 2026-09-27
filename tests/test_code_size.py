@@ -16,9 +16,7 @@ SOURCE = Path(__file__).resolve().parents[1] / "src" / "excel_ops"
 MAX_FUNCTION_LINES = 100
 MAX_MODULE_LINES = 800
 
-OVERSIZED_FUNCTIONS = {
-    "template_writer.py:write_template": 127,
-}
+OVERSIZED_FUNCTIONS: dict[str, int] = {}
 
 OVERSIZED_MODULES: dict[str, int] = {}
 
