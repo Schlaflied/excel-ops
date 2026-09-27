@@ -22,7 +22,7 @@ row being appended twice inside a target workbook; both stay in force.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -160,11 +160,62 @@ def run_delivery(
     if not targets:
         raise DeliveryPlanError("at least one delivery target is required")
     _validate_targets(targets)
-    staging = Path(staging_dir)
     delivery = Path(delivery_dir)
-
-    failures: list[DeliveryFailure] = []
     project_recipe, recipe_failure = _load_recipe(recipe_path)
+    guard, no_op = _open_guard(
+        inputs, targets, delivery, project_recipe, decisions,
+        idempotency, artifact_fingerprint, artifact_hook, dry_run,
+    )
+    if no_op:
+        return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
+
+    prepared = _prepare(
+        inputs, targets, Path(staging_dir), delivery, confidence_threshold,
+        recipe_path, recipe_failure, project_recipe, decisions, dry_run,
+    )
+    if dry_run or not prepared.plan.writable or prepared.failures:
+        return _stopped_run(prepared, targets, dry_run, guard, recipe_path)
+
+    if guard is not None:
+        # Mark the attempt before the first write, so a run interrupted between
+        # here and the end is found as ``started`` and retried rather than being
+        # mistaken for a completed no-op baseline.
+        guard.start()
+    outcomes, target_outcomes, write_failures = _write_and_verify(
+        prepared.outcomes, targets, prepared.plan, post_stage_hook
+    )
+    failures = [*prepared.failures, *write_failures]
+    delivered = bool(target_outcomes) and all(
+        item.delivered or item.status == "no_new_records" for item in target_outcomes
+    ) and not failures
+    run = _run_result(
+        prepared, delivered, False, outcomes, target_outcomes, failures, recipe_path, guard
+    )
+    return _finish_run(
+        run,
+        guard,
+        targets,
+        period=period,
+        recipe_decisions=prepared.recipe_decisions,
+        record_inputs=prepared.record_inputs,
+        artifact_hook=artifact_hook,
+        write_manifest=write_manifest,
+    )
+
+
+def _open_guard(
+    inputs: Sequence[str | Path],
+    targets: Sequence[DeliveryTarget],
+    delivery: Path,
+    project_recipe: Mapping[str, RecipeDecision],
+    decisions: Sequence[RecipeDecision],
+    idempotency: IdempotencyOptions | None,
+    artifact_fingerprint: Mapping[str, Any] | None,
+    artifact_hook: Callable[..., Any] | None,
+    dry_run: bool,
+) -> tuple[_RunGuard | None, bool]:
+    """Evaluate whole-run idempotency; the flag says the run may short-circuit."""
+
     guard = _RunGuard.of(
         inputs,
         targets,
@@ -174,18 +225,47 @@ def run_delivery(
         idempotency,
         artifact_fingerprint,
     )
-    if guard is not None and guard.decision.no_op and not dry_run:
-        if _recorded_outputs_current(targets, delivery, artifact_hook):
-            return _no_op_run(inputs, targets, delivery, guard.decision, recipe_path)
-        guard.decision = RunDecision(
-            RETRY,
-            "recorded_export_missing_or_changed",
-            guard.decision.fingerprint,
-            guard.previous,
-        )
+    if guard is None or not guard.decision.no_op or dry_run:
+        return guard, False
+    if _recorded_outputs_current(targets, delivery, artifact_hook):
+        return guard, True
+    guard.decision = RunDecision(
+        RETRY,
+        "recorded_export_missing_or_changed",
+        guard.decision.fingerprint,
+        guard.previous,
+    )
+    return guard, False
 
-    records, record_inputs, ingest_failures = _ingest(inputs)
-    failures.extend(ingest_failures)
+
+@dataclass
+class _Prepared:
+    """Everything decided before the first write: routed records and the plan."""
+
+    outcomes: list[RecordOutcome]
+    plan: DeliveryPlan
+    batch: ConfirmationBatch
+    ambiguity_records: dict[str, tuple[str, ...]]
+    failures: list[DeliveryFailure]
+    record_inputs: list[str]
+    recipe_decisions: dict[str, RecipeDecision]
+
+
+def _prepare(
+    inputs: Sequence[str | Path],
+    targets: Sequence[DeliveryTarget],
+    staging: Path,
+    delivery: Path,
+    confidence_threshold: float,
+    recipe_path: str | Path | None,
+    recipe_failure: DeliveryFailure | None,
+    project_recipe: Mapping[str, RecipeDecision],
+    decisions: Sequence[RecipeDecision],
+    dry_run: bool,
+) -> _Prepared:
+    """Ingest, route, and plan every record without writing any workbook."""
+
+    records, record_inputs, failures = _ingest(inputs)
     if recipe_failure is not None:
         failures.append(recipe_failure)
 
@@ -206,72 +286,69 @@ def run_delivery(
 
     plan, existing_ids = _build_plan(inputs, outcomes, targets, staging, delivery, batch)
     outcomes = _mark_existing(outcomes, existing_ids)
-    plan = replace(plan, counts=_counts(outcomes))
-    ambiguity_outcomes = tuple(_ambiguity_outcomes(batch, ambiguity_records))
-
-    if dry_run or not plan.writable or failures:
-        if not plan.writable:
-            failures.append(
-                DeliveryFailure(
-                    "plan_blocked",
-                    f"The delivery plan is blocked by {len(plan.blocking_items)} item(s).",
-                    "Resolve every blocking item, then re-run the delivery.",
-                )
-            )
-        if guard is not None and not dry_run:
-            # A blocked or failed run is recorded as a failure, never as a
-            # baseline a later identical run could short-circuit against.
-            guard.finish(FAILED, False, _counts(outcomes), failures, ())
-        return DeliveryRun(
-            False,
-            dry_run,
-            plan,
-            _counts(outcomes),
-            tuple(outcomes),
-            tuple(_planned_outcome(item, plan) for item in targets),
-            ambiguity_outcomes,
-            tuple(failures),
-            str(recipe_path) if recipe_path else None,
-            batch,
-            False,
-            guard.decision if guard else None,
-        )
-
-    if guard is not None:
-        # Mark the attempt before the first write, so a run interrupted between
-        # here and the end is found as ``started`` and retried rather than being
-        # mistaken for a completed no-op baseline.
-        guard.start()
-    outcomes, target_outcomes, write_failures = _write_and_verify(
-        outcomes, targets, plan, post_stage_hook
+    return _Prepared(
+        outcomes,
+        replace(plan, counts=_counts(outcomes)),
+        batch,
+        ambiguity_records,
+        failures,
+        record_inputs,
+        {**project_recipe, **project_decisions, **run_decisions},
     )
-    failures.extend(write_failures)
-    delivered = bool(target_outcomes) and all(
-        item.delivered or item.status == "no_new_records" for item in target_outcomes
-    ) and not failures
-    run = DeliveryRun(
+
+
+def _stopped_run(
+    prepared: _Prepared,
+    targets: Sequence[DeliveryTarget],
+    dry_run: bool,
+    guard: _RunGuard | None,
+    recipe_path: str | Path | None,
+) -> DeliveryRun:
+    """Return a dry run, or a run stopped before any write by a blocker or failure."""
+
+    failures = list(prepared.failures)
+    plan = prepared.plan
+    if not plan.writable:
+        failures.append(
+            DeliveryFailure(
+                "plan_blocked",
+                f"The delivery plan is blocked by {len(plan.blocking_items)} item(s).",
+                "Resolve every blocking item, then re-run the delivery.",
+            )
+        )
+    if guard is not None and not dry_run:
+        # A blocked or failed run is recorded as a failure, never as a
+        # baseline a later identical run could short-circuit against.
+        guard.finish(FAILED, False, _counts(prepared.outcomes), failures, ())
+    planned = [_planned_outcome(item, plan) for item in targets]
+    return _run_result(
+        prepared, False, dry_run, prepared.outcomes, planned, failures, recipe_path, guard
+    )
+
+
+def _run_result(
+    prepared: _Prepared,
+    delivered: bool,
+    dry_run: bool,
+    outcomes: Sequence[RecordOutcome],
+    target_outcomes: Sequence[TargetOutcome],
+    failures: Sequence[DeliveryFailure],
+    recipe_path: str | Path | None,
+    guard: _RunGuard | None,
+) -> DeliveryRun:
+    return DeliveryRun(
         delivered,
-        False,
-        plan,
+        dry_run,
+        prepared.plan,
         _counts(outcomes),
         tuple(outcomes),
         tuple(target_outcomes),
-        ambiguity_outcomes,
+        tuple(_ambiguity_outcomes(prepared.batch, prepared.ambiguity_records)),
         tuple(failures),
         str(recipe_path) if recipe_path else None,
-        batch,
+        prepared.batch,
         False,
         guard.decision if guard else None,
-    )
-    return _finish_run(
-        run,
-        guard,
-        targets,
-        period=period,
-        recipe_decisions={**project_recipe, **project_decisions, **run_decisions},
-        record_inputs=record_inputs,
-        artifact_hook=artifact_hook,
-        write_manifest=write_manifest,
     )
 
 
@@ -321,7 +398,7 @@ def _route_records(
 
 def _finish_run(
     run: DeliveryRun,
-    guard: "_RunGuard | None",
+    guard: _RunGuard | None,
     targets: Sequence[DeliveryTarget],
     *,
     period: PeriodResult | None,
@@ -349,24 +426,7 @@ def _finish_run(
         record_input_paths=record_inputs,
     )
     if artifact_hook is not None:
-        built_outputs = {Path(manifest.output).resolve() for manifest in manifests}
-        recovered = tuple(
-            manifest
-            for outcome in run.targets
-            if outcome.delivery_path
-            for manifest in (read_delivery_manifest(outcome.delivery_path),)
-            if manifest is not None and Path(manifest.output).resolve() not in built_outputs
-        )
-        manifests = (*manifests, *recovered)
-    if artifact_hook is not None and run.delivered:
-        manifest_outputs = {Path(manifest.output).resolve() for manifest in manifests}
-        missing_manifests = tuple(
-            outcome.delivery_path
-            for outcome in run.targets
-            if outcome.delivery_path
-            and Path(outcome.delivery_path).is_file()
-            and Path(outcome.delivery_path).resolve() not in manifest_outputs
-        )
+        manifests, missing_manifests = _with_recovered_manifests(run, manifests)
         if missing_manifests:
             failures.append(
                 DeliveryFailure(
@@ -429,8 +489,39 @@ def _finish_run(
     return replace(run, manifests=manifests)
 
 
+def _with_recovered_manifests(
+    run: DeliveryRun, manifests: tuple[DeliveryManifest, ...]
+) -> tuple[tuple[DeliveryManifest, ...], bool]:
+    """Add on-disk Manifests for outputs not rebuilt this run; flag any still missing.
+
+    Only a delivered run can be missing a Manifest: the flag is always False
+    otherwise.
+    """
+
+    built_outputs = {Path(manifest.output).resolve() for manifest in manifests}
+    recovered = tuple(
+        manifest
+        for outcome in run.targets
+        if outcome.delivery_path
+        for manifest in (read_delivery_manifest(outcome.delivery_path),)
+        if manifest is not None and Path(manifest.output).resolve() not in built_outputs
+    )
+    manifests = (*manifests, *recovered)
+    if not run.delivered:
+        return manifests, False
+    manifest_outputs = {Path(manifest.output).resolve() for manifest in manifests}
+    missing_manifests = tuple(
+        outcome.delivery_path
+        for outcome in run.targets
+        if outcome.delivery_path
+        and Path(outcome.delivery_path).is_file()
+        and Path(outcome.delivery_path).resolve() not in manifest_outputs
+    )
+    return manifests, bool(missing_manifests)
+
+
 def _failed_run(
-    run: DeliveryRun, guard: "_RunGuard | None", failures: Sequence[DeliveryFailure]
+    run: DeliveryRun, guard: _RunGuard | None, failures: Sequence[DeliveryFailure]
 ) -> DeliveryRun:
     """Record a failed run and return it without Manifests, so it is retried."""
 
