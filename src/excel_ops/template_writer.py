@@ -140,6 +140,80 @@ def write_template(
     verification must consume.
     """
 
+    source, materialized, resolved_formats, destination, naming = _prepare_output(
+        template_path,
+        records,
+        mapping,
+        output_path=output_path,
+        output_dir=output_dir,
+        output_pattern=output_pattern,
+        period=period,
+        naming_values=naming_values,
+    )
+
+    keep_vba = source.suffix.lower() == ".xlsm"
+    workbook = load_workbook(destination, keep_vba=keep_vba)
+    if mapping.sheet not in workbook.sheetnames:
+        workbook.close()
+        destination.unlink(missing_ok=True)
+        raise TemplateWriteError(f"mapped sheet does not exist: {mapping.sheet}")
+
+    worksheet = workbook[mapping.sheet]
+    if mapping.max_rows is not None and len(materialized) > mapping.max_rows:
+        workbook.close()
+        destination.unlink(missing_ok=True)
+        raise TemplateWriteError(
+            f"record count {len(materialized)} exceeds mapped max_rows {mapping.max_rows}"
+        )
+
+    changes, skipped, format_changes = _write_rows(
+        worksheet, mapping, materialized, resolved_formats
+    )
+
+    workbook.save(destination)
+    workbook.close()
+    try:
+        _verify_number_formats(destination, mapping, materialized, resolved_formats)
+    except TemplateWriteError:
+        destination.unlink(missing_ok=True)
+        raise
+    result = TemplateWriteResult(
+        template_path=source,
+        output_path=destination.resolve(),
+        change_log_path=destination.with_suffix(destination.suffix + ".changes.json").resolve(),
+        mapping=mapping,
+        changes=tuple(changes),
+        skipped=tuple(skipped),
+        format_changes=tuple(format_changes),
+        format_policy=policy_manifest(mapping.format_policy, resolved_formats),
+        naming=naming,
+    )
+    _write_change_log(result)
+    return result
+
+
+def _prepare_output(
+    template_path: str | Path,
+    records: Iterable[Mapping[str, Any] | object],
+    mapping: TemplateMapping,
+    *,
+    output_path: str | Path | None,
+    output_dir: str | Path | None,
+    output_pattern: str | None,
+    period: object | None,
+    naming_values: Mapping[str, object] | None,
+) -> tuple[
+    Path,
+    list[Mapping[str, Any] | object],
+    Mapping[str, ResolvedFieldFormat],
+    Path,
+    ResolvedOutput | None,
+]:
+    """Validate the template and format policy, then copy it to a fresh output path.
+
+    Never overwrites the template itself or an existing file.
+    """
+
     source = Path(template_path).resolve()
     if not source.is_file():
         raise TemplateWriteError(f"template does not exist: {source}")
@@ -170,25 +244,20 @@ def write_template(
         raise TemplateWriteError(f"output path already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+    return source, materialized, resolved_formats, destination, naming
 
-    keep_vba = source.suffix.lower() == ".xlsm"
-    workbook = load_workbook(destination, keep_vba=keep_vba)
-    if mapping.sheet not in workbook.sheetnames:
-        workbook.close()
-        destination.unlink(missing_ok=True)
-        raise TemplateWriteError(f"mapped sheet does not exist: {mapping.sheet}")
 
-    worksheet = workbook[mapping.sheet]
+def _write_rows(
+    worksheet: Any,
+    mapping: TemplateMapping,
+    materialized: list[Mapping[str, Any] | object],
+    resolved_formats: Mapping[str, ResolvedFieldFormat],
+) -> tuple[list[TemplateChange], list[TemplateSkip], list[TemplateFormatChange]]:
+    """Write each record's mapped cells, skipping formulas and merged followers."""
+
     changes: list[TemplateChange] = []
     skipped: list[TemplateSkip] = []
     format_changes: list[TemplateFormatChange] = []
-    if mapping.max_rows is not None and len(materialized) > mapping.max_rows:
-        workbook.close()
-        destination.unlink(missing_ok=True)
-        raise TemplateWriteError(
-            f"record count {len(materialized)} exceeds mapped max_rows {mapping.max_rows}"
-        )
-
     style_row = mapping.style_source_row or mapping.data_start_row
     for record_index, raw_record in enumerate(materialized):
         values = _record_values(raw_record)
@@ -227,27 +296,7 @@ def write_template(
             changes.append(
                 TemplateChange(mapping.sheet, coordinate, field_name, record_index, previous, new_value)
             )
-
-    workbook.save(destination)
-    workbook.close()
-    try:
-        _verify_number_formats(destination, mapping, materialized, resolved_formats)
-    except TemplateWriteError:
-        destination.unlink(missing_ok=True)
-        raise
-    result = TemplateWriteResult(
-        template_path=source,
-        output_path=destination.resolve(),
-        change_log_path=destination.with_suffix(destination.suffix + ".changes.json").resolve(),
-        mapping=mapping,
-        changes=tuple(changes),
-        skipped=tuple(skipped),
-        format_changes=tuple(format_changes),
-        format_policy=policy_manifest(mapping.format_policy, resolved_formats),
-        naming=naming,
-    )
-    _write_change_log(result)
-    return result
+    return changes, skipped, format_changes
 
 
 def _destination(
