@@ -6,7 +6,7 @@
 
 [中文说明](README.zh-CN.md) | English
 
-Latest release: **[v0.5.0 — Agent-ready reliable delivery](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0)**
+Latest release: **[v0.5.1 — Maintainability pass](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.1)**
 
 ### I hate VLOOKUP. This is why.
 
@@ -149,11 +149,11 @@ The detailed, acceptance-test-driven roadmap lives in [Roadmap issue #5](https:/
 
 ## Current capabilities
 
-**v0.5.0 is the current release.** It includes the complete local Phase 1 delivery foundation: business-period resolution, safe template write-back, independent verification, `run_delivery(...)`, working-directory scan, whole-run idempotency, delivery Manifests, semantic number formats, cross-platform refresh/apply/rollback, the local Agent MCP server, verified XLSX/CSV/PDF delivery, and version-aware formula planning through independently recalculated delivery.
+**v0.5.1 is the current release.** It is a maintainability release on top of v0.5.0 with no behavior change: the long delivery, workdir, CLI, PDF-verification, and template-writer code is split into named steps, and a CI size ratchet keeps new functions within 100 lines and modules within 800. Together with v0.5.0 it includes the complete local Phase 1 delivery foundation: business-period resolution, safe template write-back, independent verification, `run_delivery(...)`, working-directory scan, whole-run idempotency, delivery Manifests, semantic number formats, cross-platform refresh/apply/rollback, the local Agent MCP server, verified XLSX/CSV/PDF delivery, and version-aware formula planning through independently recalculated delivery.
 
 The MCP server exposes `scan_workdir`, `prepare_delivery`, `plan_delivery`, and `run_delivery` as structured tools over the same Python core ([docs](docs/mcp.md)). Formula-mode delivery uses Microsoft Excel on Windows or LibreOffice for independent recalculation; if neither engine is available, delivery fails rather than claiming unverified success.
 
-Merged modules, repository tests, a verified persisted file, and a tagged Release remain separate kinds of evidence. See the [v0.5.0 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0) for the published scope and known gaps.
+Merged modules, repository tests, a verified persisted file, and a tagged Release remain separate kinds of evidence. See the [v0.5.1 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.1) and the [v0.5.0 Release](https://github.com/Schlaflied/excel-ops/releases/tag/v0.5.0) for the published scope and known gaps.
 
 [See the complete capability ledger, implementation status, safety boundaries, and linked issues/PRs](docs/capabilities.md).
 

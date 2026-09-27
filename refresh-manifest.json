@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "Schlaflied/excel-ops",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "files": {
     ".agents/skills/excel-agent/SKILL.md": "660b9c81c57e1fa26228a49551de79da24151749c37c2ca07096a149dc537675",
     ".agents/skills/excel-agent/agents/openai.yaml": "5aaeca2c2b762f2531c0de3ec131894f44374d1a3c86b734c729a82dd5d0cdf5",
@@ -11,8 +11,8 @@
     ".gitignore": "be258e490f82e9f6f37311f442278703f720f12797f6fea96797b28fdd5b37b8",
     "AGENTS.md": "60a1e6d3938d78a0b4bbc649aea66f800fa0241c7e57619e3cbf2019a3ca480d",
     "LICENSE": "48737bf08c25367cd7f76f8b47b604e6b48db0a12ee0a9b47496768beef8a8cf",
-    "README.md": "58526f600bb9b72d9de587214b286d50480379bd8381f7507a4371a0997ad095",
-    "README.zh-CN.md": "dadabe6be94fdc6c4367ada2e2b26032ea60d31fae1d174b10c97b2663ba47dc",
+    "README.md": "6e5c899486e9eee296f5bbd5789a878c55e608c56bdaefebf10379e3d5c4ae0a",
+    "README.zh-CN.md": "a0d39b01524932e113192dcc0c40283d25b612cf07625aacaa0b22a1b55a24aa",
     "assets/logo.png": "01c52c30dc9ef3c173b4c78f3efb05325bc6fce277144aac27fec4b49c5b9f70",
     "docs/agent-workflow.md": "8b7f24d9640d92e211b0350043c56ac1d312d40bbd0c6cfcc27fec3c711a7fe0",
     "docs/agent-workflow.zh-CN.md": "ddc3d31578ea664e919b4f4418e26ae46a797e960034c51fb16b5e24fc4b8eea",
@@ -48,7 +48,7 @@
     "mcp/server.mjs": "d19bfa376610c003a0645f2ee929865824f339cc8eb77a67018c2956a42e4f9b",
     "package-lock.json": "88558bfb59d0e37ce9a65a2e047a6e70a8bccb46f1ff6a327010b02e363c332d",
     "package.json": "daea0a83bb7ed950a9c51336f6926a012256c4ab063eb300a5ab976ffc1a2d4f",
-    "pyproject.toml": "be1c50a6ecc07052bc95680a39171e5ae1fa53bd2c64d1c6a79c12d71c5e81e2",
+    "pyproject.toml": "48679b10ef0de01955e0251121352a765e7308a9222b9f0311ac24e054369731",
     "refresh.mjs": "170ddb3f1cb053f4d2071c40f24cba728ceac2f03363e7a674c107d76373a4a7",
     "scripts/update-refresh-manifest.mjs": "248616dd622f0771664bd77c45628de049234bde451fd2f4f3abebfc6e58e2f1",
     "src/excel_ops/__init__.py": "313226b41b8e663651c4e75e30b45bf843020fc98ff9c736edd211c08bce4746",
