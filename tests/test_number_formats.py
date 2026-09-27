@@ -9,11 +9,11 @@ from openpyxl import Workbook, load_workbook
 from excel_ops.delivery import (
     DeliveryPlanError,
     DeliveryTarget,
-    _mapping_payload,
     load_delivery_targets,
     plan_delivery,
     run_delivery,
 )
+from excel_ops.delivery_guard import _mapping_payload
 from excel_ops.matching import Destination
 from excel_ops.number_formats import (
     FieldFormatPolicy,

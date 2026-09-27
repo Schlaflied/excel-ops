@@ -26,7 +26,6 @@ OVERSIZED_FUNCTIONS = {
 }
 
 OVERSIZED_MODULES = {
-    "delivery.py": 834,
     "delivery_manifest.py": 807,
 }
 
