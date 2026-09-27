@@ -65,6 +65,16 @@ def verify_pdf_layout(
             )
         )
 
+    page_text, page_findings = _check_pages(pages)
+    findings.extend(page_findings)
+    findings.extend(_check_sheets(workbook_path, sheets, len(pages), page_text))
+    return PdfLayoutVerification(not findings, len(pages), tuple(findings))
+
+
+def _check_pages(pages: Sequence[Any]) -> tuple[list[str], list[PdfLayoutFinding]]:
+    """Check each page's bounds and readable text; return the normalized text per page."""
+
+    findings: list[PdfLayoutFinding] = []
     page_text: list[str] = []
     for index, page in enumerate(pages, start=1):
         try:
@@ -120,7 +130,18 @@ def verify_pdf_layout(
                     page=index,
                 )
             )
+    return page_text, findings
 
+
+def _check_sheets(
+    workbook_path: str | Path,
+    sheets: Sequence[str],
+    page_count: int,
+    page_text: Sequence[str],
+) -> list[PdfLayoutFinding]:
+    """Check each selected worksheet's print setup and edge content against the PDF text."""
+
+    findings: list[PdfLayoutFinding] = []
     workbook = load_workbook(workbook_path, read_only=False, data_only=False)
     try:
         rendered_text = " ".join(page_text)
@@ -161,7 +182,7 @@ def verify_pdf_layout(
                         )
                     )
                     break
-            if len(sheets) == 1 and len(pages) > 1 and worksheet.print_title_rows:
+            if len(sheets) == 1 and page_count > 1 and worksheet.print_title_rows:
                 title_tokens = _title_tokens(worksheet)
                 if title_tokens and any(
                     any(token not in text for token in title_tokens) for text in page_text
@@ -175,8 +196,7 @@ def verify_pdf_layout(
                     )
     finally:
         workbook.close()
-
-    return PdfLayoutVerification(not findings, len(pages), tuple(findings))
+    return findings
 
 
 def _has_safe_scaling(worksheet) -> bool:
