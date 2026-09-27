@@ -17,7 +17,6 @@ MAX_FUNCTION_LINES = 100
 MAX_MODULE_LINES = 800
 
 OVERSIZED_FUNCTIONS = {
-    "pdf_layout_verification.py:verify_pdf_layout": 139,
     "template_writer.py:write_template": 127,
 }
 
