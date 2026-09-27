@@ -22,6 +22,7 @@ from .delivery_verification import (
     DeliveryContract,
     DeliveryVerificationError,
     StageCounts,
+    VerificationFinding,
     verify_and_deliver,
 )
 from .formula_delivery import (
@@ -162,46 +163,30 @@ def _write_target(
             target.template_path, rows, target.mapping, output_path=planned.staged_path
         )
     except TemplateWriteError as error:
-        return (
-            TargetOutcome(target.key, planned.template_path, False, status="write_failed"),
-            DeliveryFailure(
-                "template_write_failed",
-                f"{target.key}: {error}",
-                "Correct the template mapping or the staging path, then re-run.",
-                target.key,
-            ),
-            {},
+        return _target_failure(
+            target, planned, "write_failed", "template_write_failed", error,
+            "Correct the template mapping or the staging path, then re-run.",
         )
 
     staged = Path(write_result.output_path)
+    written = {
+        "staged_path": str(staged),
+        "change_log_path": str(write_result.change_log_path),
+    }
     record_ids = tuple(item.record_id for item in accepted)
     skipped = tuple(asdict(item) for item in write_result.skipped)
     if write_result.skipped:
         # A mapped cell the writer refused to touch means an accepted record
         # was not fully written. Fail closed instead of delivering a partial row.
         reasons = sorted({item.reason for item in write_result.skipped})
-        return (
-            TargetOutcome(
-                target.key,
-                planned.template_path,
-                False,
-                str(staged),
-                None,
-                str(write_result.change_log_path),
-                None,
-                record_ids,
-                len(write_result.changes),
-                skipped,
-                (),
-                "incomplete_write",
-            ),
-            DeliveryFailure(
-                "incomplete_write",
-                f"{target.key}: the writer skipped {len(write_result.skipped)} mapped cell(s): {', '.join(reasons)}.",
-                "Adjust the template mapping or unprotect the declared region; never deliver a partially written row.",
-                target.key,
-            ),
-            {},
+        return _target_failure(
+            target, planned, "incomplete_write", "incomplete_write",
+            f"the writer skipped {len(write_result.skipped)} mapped cell(s): {', '.join(reasons)}.",
+            "Adjust the template mapping or unprotect the declared region; never deliver a partially written row.",
+            **written,
+            written_record_ids=record_ids,
+            written_cells=len(write_result.changes),
+            skipped_writes=skipped,
         )
 
     formula_evidence: Mapping[str, Any] = {}
@@ -209,24 +194,11 @@ def _write_target(
         try:
             formula_evidence = apply_formula_delivery(staged, target.formula_rules)
         except FormulaDeliveryError as error:
-            return (
-                TargetOutcome(
-                    target.key,
-                    planned.template_path,
-                    False,
-                    str(staged),
-                    None,
-                    str(write_result.change_log_path),
-                    status="formula_delivery_failed",
-                    formula_evidence={"status": "failed"},
-                ),
-                DeliveryFailure(
-                    "formula_delivery_failed",
-                    f"{target.key}: {error}",
-                    "Review the formula plan, expectations, and calculation engine, then re-run.",
-                    target.key,
-                ),
-                {},
+            return _target_failure(
+                target, planned, "formula_delivery_failed", "formula_delivery_failed", error,
+                "Review the formula plan, expectations, and calculation engine, then re-run.",
+                **written,
+                formula_evidence={"status": "failed"},
             )
 
     if post_stage_hook is not None:
@@ -236,29 +208,15 @@ def _write_target(
     try:
         verification = verify_and_deliver(write_result, planned.delivery_path, contract)
     except DeliveryVerificationError as error:
-        return (
-            TargetOutcome(
-                target.key,
-                planned.template_path,
-                False,
-                str(staged),
-                None,
-                str(write_result.change_log_path),
-                str(error.result.report_path),
-                record_ids,
-                len(write_result.changes),
-                skipped,
-                error.result.findings,
-                "verification_failed",
-            ),
-            DeliveryFailure(
-                "verification_failed",
-                f"{target.key}: {error}",
-                "Read the verification report, fix the cause, and deliver again.",
-                target.key,
-                error.result.findings,
-            ),
-            {},
+        return _target_failure(
+            target, planned, "verification_failed", "verification_failed", error,
+            "Read the verification report, fix the cause, and deliver again.",
+            findings=error.result.findings,
+            **written,
+            verification_report_path=str(error.result.report_path),
+            written_record_ids=record_ids,
+            written_cells=len(write_result.changes),
+            skipped_writes=skipped,
         )
 
     return (
@@ -280,6 +238,33 @@ def _write_target(
         ),
         None,
         _trace(accepted, write_result),
+    )
+
+
+def _target_failure(
+    target: DeliveryTarget,
+    planned: PlannedTarget,
+    status: str,
+    code: str,
+    message: object,
+    suggestion: str,
+    *,
+    findings: tuple[VerificationFinding, ...] = (),
+    **outcome_fields: Any,
+) -> tuple[TargetOutcome, DeliveryFailure, dict[int, tuple[WrittenCell, ...]]]:
+    """A target that was not delivered, and the failure that explains why."""
+
+    return (
+        TargetOutcome(
+            target.key,
+            planned.template_path,
+            False,
+            status=status,
+            findings=findings,
+            **outcome_fields,
+        ),
+        DeliveryFailure(code, f"{target.key}: {message}", suggestion, target.key, findings),
+        {},
     )
 
 
