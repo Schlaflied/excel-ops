@@ -22,7 +22,7 @@ row being appended twice inside a target workbook; both stay in force.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -39,6 +39,8 @@ from .delivery_ambiguity import (
     _confirmations,
     _load_recipe,
 )
+from .delivery_config import load_delivery_targets
+from .delivery_guard import _no_op_run, _RunGuard
 from .delivery_manifest import (
     DeliveryManifest,
     build_delivery_manifests,
@@ -68,34 +70,17 @@ from .delivery_models import (
     _delivery_path,
 )
 from .delivery_planning import _build_plan, _classify, _mark_existing, _planned_outcome
-from .delivery_verification import PeriodExpectation
 from .delivery_write import _write_and_verify
-from .formula_delivery import FormulaDeliveryError, formula_rule_from_mapping
 from .idempotency import (
-    CHANGED,
     FAILED,
-    NO_OP,
     RETRY,
-    STARTED,
     SUCCEEDED,
-    ConnectorTarget,
-    IdempotencyError,
     IdempotencyOptions,
     RunDecision,
-    RunFingerprint,
-    RunRecord,
-    compute_fingerprint,
-    evaluate_run,
-    load_run_record,
-    record_run,
 )
 from .ingestion import LayoutDetectionError, load_input_records
-from .matching import Destination
 from .models import ExtractedRecord
-from .number_formats import FormatPolicy, NumberFormatPolicyError, policy_manifest
-from .export_formats import ExportFormatError, parse_export_formats
 from .periods import PeriodResult
-from .template_writer import TemplateMapping
 
 # ``excel_ops.delivery`` stays the one public import path for the pipeline.
 __all__ = [
@@ -481,214 +466,6 @@ def plan_delivery(
     )
 
 
-def _period_payload(targets: Sequence[DeliveryTarget], period: Any) -> dict[str, Any]:
-    """The declared report period: the explicit one plus the in-workbook banners."""
-
-    return {
-        "declared": period,
-        "expectations": sorted(
-            f"{item.field}@{item.sheet}!{item.cell}={item.expected}"
-            for target in targets
-            for item in target.period_expectations
-        ),
-    }
-
-
-def _mapping_payload(targets: Sequence[DeliveryTarget]) -> list[dict[str, Any]]:
-    """The declared mapping version: what each target promises to write, where."""
-
-    return [
-        {
-            "key": target.key,
-            "aliases": sorted(target.destination.aliases),
-            "sheet": target.mapping.sheet,
-            "field_columns": {
-                name: str(column) for name, column in sorted(target.mapping.field_columns.items())
-            },
-            "header_row": target.mapping.header_row,
-            "data_start_row": target.mapping.data_start_row,
-            "template_type": target.mapping.template_type,
-            "style_source_row": target.mapping.style_source_row,
-            "max_rows": target.mapping.max_rows,
-            "overwrite_formulas": target.mapping.overwrite_formulas,
-            "format_policy": policy_manifest(target.mapping.format_policy),
-            "record_id_field": target.record_id_field,
-            "required_fields": sorted(target.required_fields),
-            "formula_rules": [
-                rule.fingerprint_payload() for rule in target.formula_rules
-            ],
-        }
-        for target in sorted(targets, key=lambda item: item.key)
-    ]
-
-
-@dataclass
-class _RunGuard:
-    """The whole-run idempotency state for one ``run_delivery`` call."""
-
-    options: IdempotencyOptions
-    state_path: Path
-    task_key: str
-    connector: ConnectorTarget
-    decision: RunDecision
-    previous: RunRecord | None
-    #: Recomputes the fingerprint against the files as they are *now*, so the
-    #: record left behind describes the delivered state rather than the
-    #: pre-delivery one.  Without this, the output content hash recorded before
-    #: the write would never match the next run and no run could ever be a no-op.
-    recompute: Callable[[], RunFingerprint]
-
-    @classmethod
-    def of(
-        cls,
-        inputs: Sequence[str | Path],
-        targets: Sequence[DeliveryTarget],
-        delivery: Path,
-        project_recipe: Mapping[str, RecipeDecision],
-        decisions: Sequence[RecipeDecision],
-        options: IdempotencyOptions | None,
-        artifact_fingerprint: Mapping[str, Any] | None,
-    ) -> "_RunGuard | None":
-        if options is None:
-            return None
-        outputs = [_delivery_path(target, delivery) for target in targets]
-        connector = options.connector or ConnectorTarget.local(outputs)
-        templates = [target.template_path for target in targets]
-        mapping: Any = _mapping_payload(targets)
-        if artifact_fingerprint is not None:
-            mapping = {"targets": mapping, "artifacts": dict(artifact_fingerprint)}
-        period = _period_payload(targets, options.period)
-
-        def recompute() -> RunFingerprint:
-            return compute_fingerprint(
-                inputs=inputs,
-                templates=templates,
-                template_profile_version=options.template_profile_version,
-                mapping=mapping,
-                recipe_decisions=project_recipe,
-                confirmations=decisions,
-                period=period,
-                connector=connector,
-                revision_source=options.revision_source,
-            )
-
-        fingerprint = recompute()
-        path = options.resolved_state_path(delivery)
-        task_key = options.resolved_task_key(connector)
-        try:
-            previous = load_run_record(path, task_key)
-        except IdempotencyError:
-            # An unreadable or foreign run-state file must never authorize a
-            # no-op; the run proceeds and rewrites the record.
-            return cls(
-                options,
-                path,
-                task_key,
-                connector,
-                RunDecision(CHANGED, "unreadable_run_state", fingerprint),
-                None,
-                recompute,
-            )
-        decision = evaluate_run(
-            fingerprint,
-            previous,
-            connector=connector,
-            revision_source=options.revision_source,
-        )
-        return cls(options, path, task_key, connector, decision, previous, recompute)
-
-    def start(self) -> None:
-        record_run(
-            self.decision.fingerprint,
-            self.state_path,
-            task_key=self.task_key,
-            status=STARTED,
-            delivered=False,
-            detail={"stage": "write_and_verify"},
-            previous=self.previous,
-        )
-
-    def finish(
-        self,
-        status: str,
-        delivered: bool,
-        counts: Mapping[str, int],
-        failures: Sequence[DeliveryFailure],
-        target_outcomes: Sequence[TargetOutcome],
-    ) -> RunRecord:
-        # Only aggregate, non-identifying detail is persisted: counts, failure
-        # codes, and how many targets were delivered.  No path, no destination
-        # name, no cell value ever reaches the run record.
-        detail = {
-            "counts": dict(counts),
-            "failure_codes": sorted({item.code for item in failures}),
-            "targets": len(target_outcomes),
-            "delivered_targets": sum(1 for item in target_outcomes if item.delivered),
-        }
-        return record_run(
-            self.recompute(),
-            self.state_path,
-            task_key=self.task_key,
-            status=status,
-            delivered=delivered,
-            detail=detail,
-            previous=self.previous,
-        )
-
-
-def _no_op_run(
-    inputs: Sequence[str | Path],
-    targets: Sequence[DeliveryTarget],
-    delivery: Path,
-    decision: RunDecision,
-    recipe_path: str | Path | None,
-) -> DeliveryRun:
-    """Return "nothing changed" without redoing matching, writing, or verifying."""
-
-    planned: list[PlannedTarget] = []
-    outcomes: list[TargetOutcome] = []
-    for target in targets:
-        template = Path(target.template_path)
-        delivered_path = _delivery_path(target, delivery)
-        planned.append(
-            PlannedTarget(
-                destination_key=target.key,
-                template_path=str(template),
-                sheet=target.mapping.sheet,
-                field_mapping=dict(target.mapping.field_columns),
-                staged_path="",
-                delivery_path=str(delivered_path),
-                expected_written=0,
-                expected_review=0,
-                expected_skipped_existing=0,
-            )
-        )
-        outcomes.append(
-            TargetOutcome(
-                target.key,
-                str(template),
-                False,
-                delivery_path=str(delivered_path) if delivered_path.is_file() else None,
-                status=NO_OP,
-            )
-        )
-    plan = DeliveryPlan(tuple(str(item) for item in inputs), _counts(()), tuple(planned))
-    return DeliveryRun(
-        False,
-        False,
-        plan,
-        _counts(()),
-        (),
-        tuple(outcomes),
-        (),
-        (),
-        str(recipe_path) if recipe_path else None,
-        None,
-        True,
-        decision,
-    )
-
-
 def _validate_targets(targets: Sequence[DeliveryTarget]) -> None:
     keys = [item.key for item in targets]
     if len(keys) != len(set(keys)):
@@ -734,101 +511,3 @@ def _ingest(
             records.extend(loaded)
             origins.extend(str(item) for _ in loaded)
     return records, origins, failures
-
-
-def load_delivery_targets(
-    payload: Mapping[str, Any], *, base_dir: str | Path = "."
-) -> tuple[list[DeliveryTarget], dict[str, Any]]:
-    """Build targets and run options from a declarative JSON configuration."""
-
-    base = Path(base_dir)
-    raw_targets = payload.get("targets")
-    if not isinstance(raw_targets, list) or not raw_targets:
-        raise DeliveryPlanError("configuration must contain a non-empty targets array")
-    targets: list[DeliveryTarget] = []
-    workbook_policy_supplied = "format_policy" in payload
-    workbook_format_policy = payload.get("format_policy")
-    for raw in raw_targets:
-        if not isinstance(raw, Mapping):
-            raise DeliveryPlanError("each target must be an object")
-        key = str(raw.get("key") or "").strip()
-        if not key:
-            raise DeliveryPlanError("each target needs a key")
-        field_columns = raw.get("field_columns")
-        if not isinstance(field_columns, Mapping) or not field_columns:
-            raise DeliveryPlanError(f"target {key} needs field_columns")
-        target_policy_supplied = "format_policy" in raw
-        policy_supplied = target_policy_supplied or workbook_policy_supplied
-        raw_format_policy = raw.get("format_policy", workbook_format_policy)
-        try:
-            if not policy_supplied:
-                format_policy = None
-            elif isinstance(raw_format_policy, Mapping):
-                format_policy = FormatPolicy.from_mapping(raw_format_policy)
-            else:
-                raise DeliveryPlanError(f"target {key} format_policy must be an object")
-        except NumberFormatPolicyError as error:
-            raise DeliveryPlanError(f"target {key} format_policy: {error}") from error
-        mapping = TemplateMapping(
-            sheet=str(raw.get("sheet") or ""),
-            field_columns=dict(field_columns),
-            header_row=int(raw.get("header_row", 1)),
-            data_start_row=int(raw.get("data_start_row", 2)),
-            template_type=str(raw.get("template_type", "table")),
-            style_source_row=raw.get("style_source_row"),
-            max_rows=raw.get("max_rows"),
-            format_policy=format_policy,
-        )
-        expectations = tuple(
-            PeriodExpectation(
-                str(item.get("sheet") or mapping.sheet),
-                str(item.get("cell")),
-                item.get("expected"),
-                str(item.get("field", "report_period")),
-            )
-            for item in raw.get("period_expectations", ())
-            if isinstance(item, Mapping)
-        )
-        raw_formulas = raw.get("formulas", ())
-        if not isinstance(raw_formulas, (list, tuple)):
-            raise DeliveryPlanError(f"target {key} formulas must be an array")
-        try:
-            formula_rules = tuple(
-                formula_rule_from_mapping(item)
-                for item in raw_formulas
-                if isinstance(item, Mapping)
-            )
-        except FormulaDeliveryError as error:
-            raise DeliveryPlanError(f"target {key} formulas: {error}") from error
-        if len(formula_rules) != len(raw_formulas):
-            raise DeliveryPlanError(f"target {key} formulas must contain objects")
-        targets.append(
-            DeliveryTarget(
-                destination=Destination(key, tuple(str(item) for item in raw.get("aliases", ()))),
-                template_path=base / str(raw.get("template") or ""),
-                mapping=mapping,
-                required_fields=tuple(str(item) for item in raw.get("required_fields", ())),
-                record_id_field=str(raw.get("record_id_field", "record_id")),
-                period_expectations=expectations,
-                delivery_name=raw.get("delivery_name"),
-                formula_rules=formula_rules,
-            )
-        )
-    inputs = payload.get("inputs")
-    if not isinstance(inputs, list) or not inputs:
-        raise DeliveryPlanError("configuration must contain a non-empty inputs array")
-    try:
-        export_selection = parse_export_formats(payload)
-    except ExportFormatError as error:
-        raise DeliveryPlanError(str(error)) from error
-    options: dict[str, Any] = {
-        "inputs": [base / str(item) for item in inputs],
-        "staging_dir": base / str(payload.get("staging_dir") or "staging"),
-        "delivery_dir": base / str(payload.get("delivery_dir") or "delivery"),
-        "confidence_threshold": float(payload.get("confidence_threshold", 0.85)),
-        "export_formats": export_selection.formats,
-        "export_selection": export_selection.to_dict(),
-    }
-    if payload.get("recipe"):
-        options["recipe_path"] = base / str(payload["recipe"])
-    return targets, options
