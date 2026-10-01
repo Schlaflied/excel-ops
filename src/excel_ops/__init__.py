@@ -49,7 +49,15 @@ from .pdf_layout_verification import (
 )
 from .excel_pdf_export import ExcelPdfExportError, export_pdf_with_excel
 from .workbook_export import WorkbookExportError, export_csv, export_xlsx
-from .health_models import HealthFinding, HealthScanError, HealthScanResult
+from .health_models import (
+    HealthFinding,
+    HealthRepairAction,
+    HealthRepairPlan,
+    HealthRepairPlanError,
+    HealthScanError,
+    HealthScanResult,
+)
+from .health_repair_plan import plan_workbook_health_repairs
 from .health_scan import scan_workbook_health
 from .idempotency import (
     ConnectorConflict,
@@ -333,7 +341,11 @@ __all__ = [
     "ExcelPdfExportError",
     "export_pdf_with_excel",
     "HealthFinding",
+    "HealthRepairAction",
+    "HealthRepairPlan",
+    "HealthRepairPlanError",
     "HealthScanError",
     "HealthScanResult",
+    "plan_workbook_health_repairs",
     "scan_workbook_health",
 ]
