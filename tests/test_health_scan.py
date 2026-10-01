@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from io import BytesIO
 import json
 from pathlib import Path
 from zipfile import ZipFile
 
 from openpyxl import Workbook
+from openpyxl import load_workbook as openpyxl_load_workbook
 import pytest
 
 from excel_ops.health_models import HealthScanError
@@ -147,3 +149,38 @@ def test_leading_zero_identifier_is_not_classified_as_numeric_text(tmp_path: Pat
 
     numeric_locations = [item.location for item in result.findings if item.code == "numeric_text"]
     assert numeric_locations == ["B2"]
+
+
+def test_findings_and_digest_come_from_the_same_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    replacement = tmp_path / "replacement.xlsx"
+    _save_healthy(source)
+    original = source.read_bytes()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Replacement"
+    sheet.append(["Name", "Amount"])
+    sheet.append(["  changed  ", 1])
+    workbook.save(replacement)
+    workbook.close()
+    replacement_bytes = replacement.read_bytes()
+
+    def load_while_path_is_replaced(stream, **options):
+        assert isinstance(stream, BytesIO)
+        source.write_bytes(replacement_bytes)
+        try:
+            return openpyxl_load_workbook(stream, **options)
+        finally:
+            source.write_bytes(original)
+
+    monkeypatch.setattr("excel_ops.health_scan.load_workbook", load_while_path_is_replaced)
+
+    result = scan_workbook_health(source)
+
+    assert result.source_sha256 == sha256(original).hexdigest()
+    assert result.source_size == len(original)
+    assert result.sheets == ("Data",)
+    assert result.findings == ()
+    assert source.read_bytes() == original

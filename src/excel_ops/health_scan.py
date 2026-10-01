@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 import re
 import unicodedata
@@ -266,11 +267,15 @@ def scan_workbook_health(source: str | Path) -> HealthScanResult:
         raise HealthScanError(f"workbook does not exist: {path}")
     if path.suffix.lower() not in {".xlsx", ".xlsm"}:
         raise HealthScanError("health scan supports only .xlsx and .xlsm workbooks")
-    before_size = path.stat().st_size
-    before = _digest(path)
+    try:
+        snapshot = path.read_bytes()
+    except OSError as exc:
+        raise HealthScanError(f"workbook could not be read: {exc}") from exc
+    before_size = len(snapshot)
+    before = sha256(snapshot).hexdigest()
     try:
         workbook = load_workbook(
-            path,
+            BytesIO(snapshot),
             read_only=False,
             data_only=False,
             keep_vba=path.suffix.lower() == ".xlsm",
