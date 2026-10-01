@@ -52,7 +52,7 @@ export function classifyCliResult(operation, exitCode, stdout, stderr, durationM
   let status = "completed";
   if (result?.status === "prepared" || result?.status === "needs_review") {
     status = result.status;
-  } else if (result?.dry_run === true) status = "planned";
+  } else if (result?.dry_run === true || result?.mode === "dry_run") status = "planned";
   else if (result?.no_op === true) status = "no_op";
   else if (result?.delivered === true) status = "delivered";
 
@@ -217,4 +217,12 @@ export function scanArgs(input) {
   if (input.recipe) args.push("--recipe", input.recipe);
   for (const override of input.overrides ?? []) args.push("--override", override);
   return args;
+}
+
+export function healthScanArgs(source) {
+  return ["health-scan", source];
+}
+
+export function healthRepairArgs(source, output, dryRun) {
+  return ["health-repair", source, output, "--request", "-", dryRun ? "--dry-run" : "--confirm"];
 }

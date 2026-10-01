@@ -171,6 +171,13 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 - **安全边界：** 拒绝空、未知、仍为 proposed、不受支持、stale、重复及跨工作簿的 action 请求；在加载前、保存前和发布前重复核对源文件摘要；通过窄范围修改保留 VBA、公式、数据验证、隐藏工作表和未授权单元格；拒绝带符号链接的源/输出路径；在目标目录暂存，并以不替换既有文件的方式原子创建最终名称。加载、修改、保存或发布任何一步失败，都不会留下被标作成功的输出文件。
 - **实现：** [Issue #95](https://github.com/Schlaflied/excel-ops/issues/95)
 
+### 22. 带验证的工作簿健康 CLI 与 MCP 闭环
+
+- **做什么：** 通过 Python CLI 和薄本地 MCP 适配器暴露只读健康扫描、修复 dry run 与明确确认后的正式修复。
+- **输出与证据：** 重新打开并复扫落盘候选文件，在同一 JSON 合同中对账 `before`、`actions`、`changes`、`remaining` 与 `new`。
+- **安全边界：** 写工具必须得到明确确认。授权 finding 必须消失、未授权 finding 必须保持、不得产生新 finding；否则拒绝候选且不发布输出。MCP 不包含工作簿业务逻辑。
+- **实现：** [Issue #96](https://github.com/Schlaflied/excel-ops/issues/96) / [MCP 指南](mcp.zh-CN.md)
+
 ## 当前可以组合到什么程度
 
 当前模块已经覆盖 Phase 1 本地闭环的全部环节：

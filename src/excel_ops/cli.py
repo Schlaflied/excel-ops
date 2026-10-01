@@ -11,6 +11,9 @@ from pathlib import Path
 from .delivery import load_delivery_targets, run_delivery
 from .delivery_exports import export_delivery_artifacts
 from .idempotency import IdempotencyOptions
+from .health_repair_plan import plan_workbook_health_repairs
+from .health_repair_verification import health_workflow_contract, repair_and_verify_workbook_health
+from .health_scan import scan_workbook_health
 from .pipeline import run_pipeline
 from .plan_preparation import PlanPreparationError, prepare_delivery_plan
 from .schema_drift import save_confirmed_mapping, write_drift_report
@@ -292,6 +295,47 @@ def _schema_drift(arguments: Sequence[str]) -> None:
     print(json.dumps({"output": str(output)}, ensure_ascii=False))
 
 
+def _health_scan(arguments: Sequence[str]) -> None:
+    parser = argparse.ArgumentParser(description="Read-only workbook health scan and repair plan")
+    parser.add_argument("source")
+    args = parser.parse_args(arguments)
+    scan = scan_workbook_health(args.source)
+    plan = plan_workbook_health_repairs(args.source)
+    print(json.dumps(health_workflow_contract(scan, plan, mode="scan"), ensure_ascii=False))
+
+
+def _health_repair(arguments: Sequence[str]) -> None:
+    parser = argparse.ArgumentParser(description="Plan or verify explicitly authorized health repairs")
+    parser.add_argument("source")
+    parser.add_argument("output")
+    parser.add_argument("--request", required=True, help="JSON with selected_action_ids and baselines")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--confirm", action="store_true")
+    args = parser.parse_args(arguments)
+    payload = (
+        json.load(sys.stdin)
+        if args.request == "-"
+        else json.loads(Path(args.request).read_text(encoding="utf-8"))
+    )
+    selected = payload.get("selected_action_ids", [])
+    baselines = payload.get("baselines", {})
+    dispositions = {action_id: "selected" for action_id in selected}
+    if args.dry_run:
+        scan = scan_workbook_health(args.source)
+        plan = plan_workbook_health_repairs(
+            args.source, dispositions=dispositions, baselines=baselines
+        )
+        print(json.dumps(health_workflow_contract(scan, plan, mode="dry_run"), ensure_ascii=False))
+        return
+    result = repair_and_verify_workbook_health(
+        args.source, args.output, selected_action_ids=selected, baselines=baselines
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False))
+    if not result.verified:
+        raise SystemExit(1)
+
+
 def _run_pipeline(arguments: Sequence[str]) -> None:
     parser = argparse.ArgumentParser(description="Turn reviewed extraction records into an auditable Excel delivery")
     parser.add_argument("input", help="Input .xlsx, .xlsm, .csv, or provider-neutral image extraction .json")
@@ -308,6 +352,8 @@ _COMMANDS: dict[str, Callable[[Sequence[str]], None]] = {
     "prepare-delivery": _prepare_delivery,
     "deliver": _deliver,
     "scan-workdir": _scan_workdir,
+    "health-scan": _health_scan,
+    "health-repair": _health_repair,
     "schema-drift": _schema_drift,
 }
 

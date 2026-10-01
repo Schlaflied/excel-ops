@@ -5,11 +5,16 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { pathToFileURL } from "node:url";
 import * as z from "zod/v4";
 
-import { deliveryArgs, prepareArgs, runExcelOps, scanArgs } from "./bridge.mjs";
+import {
+  deliveryArgs, healthRepairArgs, healthScanArgs, prepareArgs, runExcelOps, scanArgs,
+} from "./bridge.mjs";
 
 const ResultSchema = z.object({
   contractVersion: z.literal("excel-ops-agent-v1"),
-  operation: z.enum(["scan_workdir", "prepare_delivery", "plan_delivery", "run_delivery"]),
+  operation: z.enum([
+    "scan_workdir", "prepare_delivery", "plan_delivery", "run_delivery",
+    "scan_workbook_health", "plan_workbook_health_repair", "run_workbook_health_repair",
+  ]),
   ok: z.boolean(),
   status: z.enum([
     "completed",
@@ -49,6 +54,13 @@ const DeliveryOptions = {
   templateProfileVersion: z.string().min(1).optional(),
 };
 
+const HealthRepairOptions = {
+  source: z.string().min(1),
+  output: z.string().min(1),
+  selectedActionIds: z.array(z.string().min(1)).min(1),
+  baselines: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
+};
+
 function toolResult(payload) {
   return {
     content: [{ type: "text", text: JSON.stringify(payload) }],
@@ -63,7 +75,7 @@ export function createExcelOpsServer(options = {}) {
     { name: "excel-ops", version: "0.1.0" },
     {
       instructions:
-        "Plan first, preserve source files, never guess ambiguous business facts, and only call run_delivery after the user has approved the write.",
+        "Plan first, preserve source files, never guess ambiguous business facts, and only call run_delivery or run_workbook_health_repair after the user has explicitly approved the write.",
     },
   );
 
@@ -241,6 +253,51 @@ export function createExcelOpsServer(options = {}) {
       toolResult(
         await invoke("run_delivery", deliveryArgs(input.config, input)),
       ),
+  );
+
+  server.registerTool(
+    "excel_ops.scan_workbook_health",
+    {
+      title: "Scan workbook health",
+      description: "Read-only workbook health scan with a source-bound dry-run repair plan.",
+      inputSchema: z.object({ source: z.string().min(1) }),
+      outputSchema: ResultSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (input) => toolResult(await invoke("scan_workbook_health", healthScanArgs(input.source))),
+  );
+
+  server.registerTool(
+    "excel_ops.plan_workbook_health_repair",
+    {
+      title: "Plan authorized workbook health repairs",
+      description: "Validates explicit action IDs and baselines without writing a workbook.",
+      inputSchema: z.object(HealthRepairOptions),
+      outputSchema: ResultSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (input) => toolResult(await invoke(
+      "plan_workbook_health_repair", healthRepairArgs(input.source, input.output, true),
+      { stdin: JSON.stringify({ selected_action_ids: input.selectedActionIds, baselines: input.baselines }) },
+    )),
+  );
+
+  server.registerTool(
+    "excel_ops.run_workbook_health_repair",
+    {
+      title: "Run approved workbook health repairs",
+      description: "Writes a new copy, reopens and rescans it, and publishes only reconciled repairs after explicit approval.",
+      inputSchema: z.object({
+        ...HealthRepairOptions,
+        confirmed: z.literal(true).describe("Must be true only after explicit user approval."),
+      }),
+      outputSchema: ResultSchema,
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    },
+    async (input) => toolResult(await invoke(
+      "run_workbook_health_repair", healthRepairArgs(input.source, input.output, false),
+      { stdin: JSON.stringify({ selected_action_ids: input.selectedActionIds, baselines: input.baselines }) },
+    )),
   );
 
   return server;

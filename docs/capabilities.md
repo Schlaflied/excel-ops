@@ -171,6 +171,13 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Safety boundary:** rejects empty, unknown, proposed, unsupported, stale, duplicate, and cross-workbook action requests; rechecks the source digest before loading, before saving, and before publication; preserves VBA, formulas, validations, hidden worksheets, and non-targeted cells through narrow mutations; rejects symlinked source/output paths; stages output in the destination directory and atomically creates the final name without replacement. A load, mutation, save, or publish failure does not leave a successful output artifact.
 - **Implementation:** [Issue #95](https://github.com/Schlaflied/excel-ops/issues/95)
 
+### 22. Verified workbook-health CLI and MCP workflow
+
+- **What it does:** Exposes read-only health scanning, repair dry runs, and explicitly confirmed repair execution through the Python CLI and a thin local MCP adapter.
+- **Output and evidence:** Reopens and rescans the persisted candidate, then reconciles `before`, `actions`, `changes`, `remaining`, and `new` evidence under one JSON contract.
+- **Safety boundary:** The write tool requires explicit confirmation. Authorized findings must disappear, unauthorized findings must remain, and no new finding may appear; otherwise the candidate is rejected and no output is published. MCP contains no workbook logic.
+- **Implementation:** [Issue #96](https://github.com/Schlaflied/excel-ops/issues/96) / [MCP guide](mcp.md)
+
 ## What can currently be composed
 
 The current modules cover the full Phase 1 local loop:
