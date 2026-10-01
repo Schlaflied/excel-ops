@@ -413,3 +413,41 @@ def test_duplicate_header_baseline_checks_the_complete_header_row(tmp_path: Path
         "target_header": "Gross Amount",
         "normalized": "gross amount",
     }
+
+
+def test_selected_duplicate_header_targets_must_be_unique_within_header_row(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "multiple-duplicate-headers.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data"
+    sheet.append(["Name", "Amount", " amount ", "AMOUNT"])
+    sheet.append(["Alpha", 1, 2, 3])
+    workbook.save(source)
+    workbook.close()
+    initial = plan_workbook_health_repairs(source)
+    actions = [
+        item for item in initial.actions if item.finding_code == "duplicate_header"
+    ]
+    assert len(actions) == 2
+    baselines = {
+        action.action_id: {"target_header": "Revenue"} for action in actions
+    }
+
+    proposed = plan_workbook_health_repairs(source, baselines=baselines)
+    assert all(action.decision == "proposed" for action in proposed.actions)
+    plan_workbook_health_repairs(
+        source,
+        dispositions={
+            actions[0].action_id: "selected",
+            actions[1].action_id: "rejected",
+        },
+        baselines=baselines,
+    )
+    with pytest.raises(HealthRepairPlanError, match="targets conflict"):
+        plan_workbook_health_repairs(
+            source,
+            dispositions={action.action_id: "selected" for action in actions},
+            baselines=baselines,
+        )

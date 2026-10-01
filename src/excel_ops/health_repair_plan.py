@@ -227,6 +227,23 @@ def _build_action(
     )
 
 
+def _validate_selected_header_targets(actions: tuple[HealthRepairAction, ...]) -> None:
+    targets: dict[tuple[str, int, str], str] = {}
+    for action in actions:
+        if action.decision != "selected" or action.operation != "rename_duplicate_header":
+            continue
+        summary = action.current_state["summary"]
+        target = action.proposed_state["target"]
+        key = (action.sheet, int(summary["header_row"]), str(target["normalized"]))
+        conflicting = targets.get(key)
+        if conflicting is not None:
+            raise HealthRepairPlanError(
+                "selected header targets conflict within the same sheet and header row: "
+                f"{conflicting}, {action.action_id}"
+            )
+        targets[key] = action.action_id
+
+
 def plan_workbook_health_repairs(
     source: str | Path,
     *,
@@ -252,4 +269,5 @@ def plan_workbook_health_repairs(
     unknown = sorted((set(requested) | set(declared)) - known)
     if unknown:
         raise HealthRepairPlanError(f"unknown or stale action id(s): {unknown!r}")
+    _validate_selected_header_targets(actions)
     return HealthRepairPlan(source=scan.source, source_sha256=scan.source_sha256, actions=actions)
