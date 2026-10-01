@@ -150,6 +150,13 @@ PR 合并、自动测试、实际文件验证和业务人员批准是不同证�
 - **安全边界：** MCP 层不包含任何表格解析、匹配、写入或验证逻辑；计划准备只能写入明确授权的根目录，缺少映射时返回 review 而不猜测；正式交付仍要求 `confirmed: true`；源文件保护、写后回读、幂等和 Manifest 规则继续由 Python 强制执行。这不是云端或飞书连接器。
 - **实现：** [Issue #53](https://github.com/Schlaflied/excel-ops/issues/53)、[Issue #59](https://github.com/Schlaflied/excel-ops/issues/59) / [详细文档](mcp.zh-CN.md)
 
+### 19. 工作簿只读健康扫描
+
+- **做什么：** 扫描 `.xlsx` 与 `.xlsm` 中的数字文本、多余空格、不可见字符、重复表头、检测到的数据区内空白行、异常合并单元格、默认空工作表，以及明显游离在主要工作区之外的内容。
+- **输出与证据：** 返回稳定、可 JSON 序列化的 `HealthScanResult`；每个 finding 都包含代码、严重度、sheet、精确单元格或区域、观察证据、建议动作与可修复性分类，并在扫描前后核对源文件 SHA-256。
+- **安全边界：** 永不保存或修改工作簿，也绝不执行宏；不可读或不支持的文件会失败关闭。`no_known_issues` 只表示声明的检查项没有发现问题，不代表工作簿已被证明在所有方面都健康。修复计划、实际修改、CLI 与 MCP 入口仍不在本阶段范围内。
+- **实现：** [Issue #93](https://github.com/Schlaflied/excel-ops/issues/93)
+
 ## 当前可以组合到什么程度
 
 当前模块已经覆盖 Phase 1 本地闭环的全部环节：

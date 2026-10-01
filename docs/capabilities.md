@@ -150,6 +150,13 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 - **Safety boundary:** the MCP layer contains no spreadsheet parsing, matching, writing, or verification logic; plan preparation writes only inside explicit authorized roots and returns review items instead of guessing missing mappings; delivery still requires `confirmed: true`; source preservation, reread verification, idempotency, and Manifest rules remain enforced by Python. This is not a cloud or Feishu connector.
 - **Implementation:** [Issue #53](https://github.com/Schlaflied/excel-ops/issues/53), [Issue #59](https://github.com/Schlaflied/excel-ops/issues/59) / [Detailed guide](mcp.md)
 
+### 19. Read-only workbook health scan
+
+- **What it does:** scans `.xlsx` and `.xlsm` files for numeric text, extra whitespace, invisible characters, duplicate headers, blank rows inside the detected data region, suspicious merged cells, default empty sheets, and isolated content beyond the primary working area.
+- **Output and evidence:** returns a stable, JSON-serializable `HealthScanResult` whose findings include a code, severity, sheet, exact cell or range, observed evidence, suggested action, and fixability classification; the source SHA-256 is checked before and after inspection.
+- **Safety boundary:** never saves or modifies the workbook and never executes macros; unreadable or unsupported files fail closed. `no_known_issues` means only that none of the declared checks found a problem, not that the workbook is universally healthy. Repair planning, mutation, CLI, and MCP entry points remain out of scope.
+- **Implementation:** [Issue #93](https://github.com/Schlaflied/excel-ops/issues/93)
+
 ## What can currently be composed
 
 The current modules cover the full Phase 1 local loop:
