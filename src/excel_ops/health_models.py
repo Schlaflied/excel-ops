@@ -121,3 +121,43 @@ class HealthRepairPlan:
 
 class HealthRepairPlanError(ValueError):
     """Raised when a repair plan or requested action disposition is invalid."""
+
+
+@dataclass(frozen=True)
+class HealthRepairChange:
+    """One persisted mutation tied to an explicitly selected action."""
+
+    action_id: str
+    operation: str
+    sheet: str
+    location: str
+    before: Any
+    after: Any
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class HealthRepairResult:
+    """Evidence for a successfully published repaired copy."""
+
+    source: str
+    source_sha256: str
+    output: str
+    output_sha256: str
+    changes: tuple[HealthRepairChange, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": 1,
+            "source": self.source,
+            "source_sha256": self.source_sha256,
+            "output": self.output,
+            "output_sha256": self.output_sha256,
+            "changes": [change.to_dict() for change in self.changes],
+        }
+
+
+class HealthRepairApplyError(ValueError):
+    """Raised when an authorized repair cannot be safely published."""

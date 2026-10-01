@@ -52,12 +52,16 @@ from .workbook_export import WorkbookExportError, export_csv, export_xlsx
 from .health_models import (
     HealthFinding,
     HealthRepairAction,
+    HealthRepairApplyError,
+    HealthRepairChange,
     HealthRepairPlan,
     HealthRepairPlanError,
+    HealthRepairResult,
     HealthScanError,
     HealthScanResult,
 )
 from .health_repair_plan import plan_workbook_health_repairs
+from .health_repair_apply import apply_workbook_health_repairs
 from .health_scan import scan_workbook_health
 from .idempotency import (
     ConnectorConflict,
@@ -347,5 +351,9 @@ __all__ = [
     "HealthScanError",
     "HealthScanResult",
     "plan_workbook_health_repairs",
+    "apply_workbook_health_repairs",
+    "HealthRepairApplyError",
+    "HealthRepairChange",
+    "HealthRepairResult",
     "scan_workbook_health",
 ]
