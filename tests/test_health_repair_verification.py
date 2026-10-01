@@ -104,6 +104,31 @@ def test_health_cli_scan_dry_run_and_confirmed_write(tmp_path: Path, capsys) -> 
     assert output.exists()
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ([], "request JSON must be an object"),
+        ({"selected_action_ids": "health-1"}, "must be a list of strings"),
+        ({"selected_action_ids": [1]}, "must be a list of strings"),
+        ({"baselines": []}, "baselines must be an object"),
+    ],
+)
+def test_health_repair_cli_rejects_invalid_request_shapes(
+    tmp_path: Path, capsys, payload, message: str
+) -> None:
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "output.xlsx"
+    request = tmp_path / "request.json"
+    _source(source)
+    request.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        main(["health-repair", str(source), str(output), "--request", str(request), "--dry-run"])
+
+    assert message in capsys.readouterr().err
+    assert not output.exists()
+
+
 def test_authorized_finding_that_remains_fails_without_publishing(tmp_path: Path) -> None:
     source = tmp_path / "numeric.xlsx"
     output = tmp_path / "output.xlsx"

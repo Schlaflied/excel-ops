@@ -318,8 +318,14 @@ def _health_repair(arguments: Sequence[str]) -> None:
         if args.request == "-"
         else json.loads(Path(args.request).read_text(encoding="utf-8"))
     )
+    if not isinstance(payload, dict):
+        parser.error("request JSON must be an object")
     selected = payload.get("selected_action_ids", [])
     baselines = payload.get("baselines", {})
+    if not isinstance(selected, list) or not all(isinstance(item, str) for item in selected):
+        parser.error("selected_action_ids must be a list of strings")
+    if not isinstance(baselines, dict):
+        parser.error("baselines must be an object")
     dispositions = {action_id: "selected" for action_id in selected}
     if args.dry_run:
         scan = scan_workbook_health(args.source)
