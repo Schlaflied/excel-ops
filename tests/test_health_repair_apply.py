@@ -180,6 +180,63 @@ def test_xlsm_vba_member_is_preserved(tmp_path: Path) -> None:
         reopened.vba_archive.close()
 
 
+@pytest.mark.parametrize("suffix", [".xlsx", ".xlsm"])
+def test_unrecognized_package_members_must_not_be_silently_dropped(
+    tmp_path: Path, suffix: str
+) -> None:
+    xlsx = tmp_path / "base.xlsx"
+    source = tmp_path / f"source{suffix}"
+    output = tmp_path / f"output{suffix}"
+    _source(xlsx)
+    if suffix == ".xlsm":
+        _make_valid_macro_package(xlsx, source, b"synthetic-vba-marker-not-executable")
+    else:
+        source.write_bytes(xlsx.read_bytes())
+    with ZipFile(source, "a") as archive:
+        archive.writestr("customXml/item1.xml", b"<custom-preserve />")
+    plan, action_id = _selected_whitespace_plan(source)
+
+    with pytest.raises(HealthRepairApplyError, match="did not preserve package member"):
+        apply_workbook_health_repairs(source, output, plan, selected_action_ids=[action_id])
+
+    assert not output.exists()
+
+
+def test_original_workbook_closes_when_repaired_reload_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    output = tmp_path / "output.xlsx"
+    _source(source)
+    plan, action_id = _selected_whitespace_plan(source)
+    from excel_ops import health_repair_apply as module
+
+    real_load = module.load_workbook
+    real_close = module._close_workbook
+    loaded = []
+    closed = []
+
+    def tracked_load(*args, **kwargs):
+        if len(loaded) == 2:
+            raise OSError("synthetic repaired reload failure")
+        workbook = real_load(*args, **kwargs)
+        loaded.append(workbook)
+        return workbook
+
+    def tracked_close(workbook):
+        closed.append(workbook)
+        real_close(workbook)
+
+    monkeypatch.setattr(module, "load_workbook", tracked_load)
+    monkeypatch.setattr(module, "_close_workbook", tracked_close)
+
+    with pytest.raises(OSError, match="synthetic repaired reload failure"):
+        apply_workbook_health_repairs(source, output, plan, selected_action_ids=[action_id])
+
+    assert loaded[1] in closed
+    assert not output.exists()
+
+
 def test_forged_or_mutated_plan_is_rejected(tmp_path: Path) -> None:
     source = tmp_path / "source.xlsx"
     output = tmp_path / "output.xlsx"

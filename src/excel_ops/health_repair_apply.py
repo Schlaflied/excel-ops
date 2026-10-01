@@ -653,19 +653,27 @@ def _publish_without_overwrite(
     guard.link(staged, output)
 
 
-def _verify_xlsm_package(source: Path, staged: Any) -> None:
-    if source.suffix.lower() != ".xlsm":
-        return
+_ALLOWED_REMOVED_PACKAGE_MEMBERS = {"xl/calcChain.xml", "xl/sharedStrings.xml"}
+def _verify_package_members(source: Path, staged: Any) -> None:
     try:
         with ZipFile(source) as original, ZipFile(staged) as repaired:
             if repaired.testzip() is not None:
-                raise HealthRepairApplyError("repaired XLSM package contains a corrupt member")
+                raise HealthRepairApplyError("repaired workbook package contains a corrupt member")
+            missing = sorted(
+                set(original.namelist())
+                - set(repaired.namelist())
+                - _ALLOWED_REMOVED_PACKAGE_MEMBERS
+            )
+            if missing:
+                raise HealthRepairApplyError(
+                    f"repaired workbook did not preserve package member(s): {missing!r}"
+                )
             macro_members = [name for name in original.namelist() if name.endswith("vbaProject.bin")]
             for name in macro_members:
                 if name not in repaired.namelist() or repaired.read(name) != original.read(name):
                     raise HealthRepairApplyError("repaired XLSM did not preserve its VBA project")
     except BadZipFile as exc:
-        raise HealthRepairApplyError("source or repaired XLSM is not a valid ZIP package") from exc
+        raise HealthRepairApplyError("source or repaired workbook is not a valid ZIP package") from exc
 
 
 def _close_workbook(workbook: Any) -> None:
@@ -747,23 +755,25 @@ def _apply_with_directory_guard(
             if guard.identity(staged) != staged_identity:
                 raise HealthRepairApplyError("staged output changed during repair")
             with _duplicate_binary_stream(staged_stream.fileno()) as package_stream:
-                _verify_xlsm_package(snapshot_path, package_stream)
+                _verify_package_members(snapshot_path, package_stream)
             original = load_workbook(
                 snapshot_path, data_only=False, keep_vba=snapshot.suffix.lower() == ".xlsm"
             )
-            with _duplicate_binary_stream(staged_stream.fileno()) as repaired_stream:
-                repaired = load_workbook(
-                    repaired_stream, data_only=False,
-                    keep_vba=staged.suffix.lower() == ".xlsm",
-                )
-                try:
-                    after = _workbook_snapshot(repaired)
-                    _verify_unauthorized_unchanged(before, after, actions)
-                    _assert_persisted_targets(repaired, actions)
-                    changes = _persisted_ledger(original, repaired, actions)
-                finally:
-                    _close_workbook(repaired)
-            _close_workbook(original)
+            try:
+                with _duplicate_binary_stream(staged_stream.fileno()) as repaired_stream:
+                    repaired = load_workbook(
+                        repaired_stream, data_only=False,
+                        keep_vba=staged.suffix.lower() == ".xlsm",
+                    )
+                    try:
+                        after = _workbook_snapshot(repaired)
+                        _verify_unauthorized_unchanged(before, after, actions)
+                        _assert_persisted_targets(repaired, actions)
+                        changes = _persisted_ledger(original, repaired, actions)
+                    finally:
+                        _close_workbook(repaired)
+            finally:
+                _close_workbook(original)
             if _opened_digest(source_path, source_identity) != plan.source_sha256:
                 raise HealthRepairApplyError("source workbook changed before repaired copy publication")
             _require_identity(source_path, source_identity, "source workbook")
