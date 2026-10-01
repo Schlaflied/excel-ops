@@ -10,6 +10,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import {
   classifyCliResult,
   deliveryArgs,
+  healthRepairArgs,
+  healthScanArgs,
   prepareArgs,
   runExcelOps,
   scanArgs,
@@ -131,6 +133,11 @@ test("bridge reports signal termination as an environment failure", async () => 
 
 test("argument builders preserve CLI boundaries without using a shell", () => {
   assert.deepEqual(prepareArgs(), ["prepare-delivery"]);
+  assert.deepEqual(healthScanArgs("book.xlsx"), ["health-scan", "book.xlsx"]);
+  assert.deepEqual(
+    healthRepairArgs("book.xlsx", "fixed.xlsx", true),
+    ["health-repair", "book.xlsx", "fixed.xlsx", "--request", "-", "--dry-run"],
+  );
   assert.deepEqual(
     deliveryArgs("plans/weekly.json", {
       dryRun: true,
@@ -181,7 +188,7 @@ test("argument builders preserve CLI boundaries without using a shell", () => {
   );
 });
 
-test("MCP lists four bounded tools and calls preparation and dry-run end to end", async (t) => {
+test("MCP lists bounded delivery and workbook-health tools", async (t) => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const calls = [];
   const server = createExcelOpsServer({
@@ -215,8 +222,11 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
     listed.tools.map((tool) => tool.name).sort(),
     [
       "excel_ops.plan_delivery",
+      "excel_ops.plan_workbook_health_repair",
       "excel_ops.prepare_delivery",
       "excel_ops.run_delivery",
+      "excel_ops.run_workbook_health_repair",
+      "excel_ops.scan_workbook_health",
       "excel_ops.scan_workdir",
     ],
   );
@@ -316,6 +326,41 @@ test("MCP lists four bounded tools and calls preparation and dry-run end to end"
     args: ["deliver", "plans/weekly.json", "--dry-run"],
     options: undefined,
   });
+
+  const healthPlan = await client.callTool({
+    name: "excel_ops.plan_workbook_health_repair",
+    arguments: {
+      source: "book.xlsx", output: "fixed.xlsx",
+      selectedActionIds: ["health-1"], baselines: {},
+    },
+  });
+  assert.equal(healthPlan.isError, false);
+  assert.deepEqual(calls[2], {
+    operation: "plan_workbook_health_repair",
+    args: ["health-repair", "book.xlsx", "fixed.xlsx", "--request", "-", "--dry-run"],
+    options: { stdin: JSON.stringify({ selected_action_ids: ["health-1"], baselines: {} }) },
+  });
+
+  await client.callTool({
+    name: "excel_ops.run_workbook_health_repair",
+    arguments: {
+      source: "book.xlsx", output: "fixed.xlsx",
+      selectedActionIds: ["health-1"], baselines: {}, confirmed: true,
+    },
+  });
+  assert.equal(calls[3].operation, "run_workbook_health_repair");
+  assert.ok(calls[3].args.includes("--confirm"));
+
+  const healthScan = await client.callTool({
+    name: "excel_ops.scan_workbook_health",
+    arguments: { source: "book.xlsx" },
+  });
+  assert.equal(healthScan.isError, false);
+  assert.deepEqual(calls[4], {
+    operation: "scan_workbook_health",
+    args: ["health-scan", "book.xlsx"],
+    options: undefined,
+  });
 });
 
 test("MCP rejects an unconfirmed write before invoking the CLI", async (t) => {
@@ -341,6 +386,15 @@ test("MCP rejects an unconfirmed write before invoking the CLI", async (t) => {
   });
   assert.equal(response.isError, true);
   assert.equal(calls, 0);
+
+  const healthResponse = await client.callTool({
+    name: "excel_ops.run_workbook_health_repair",
+    arguments: {
+      source: "book.xlsx", output: "fixed.xlsx", selectedActionIds: ["health-1"],
+    },
+  });
+  assert.equal(healthResponse.isError, true);
+  assert.equal(calls, 0);
 });
 
 test("the packaged stdio entrypoint keeps stdout clean and lists its tools", async (t) => {
@@ -354,7 +408,7 @@ test("the packaged stdio entrypoint keeps stdout clean and lists its tools", asy
 
   await client.connect(transport);
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 4);
+  assert.equal(listed.tools.length, 7);
   assert.ok(listed.tools.some((tool) => tool.name === "excel_ops.prepare_delivery"));
   assert.ok(listed.tools.some((tool) => tool.name === "excel_ops.plan_delivery"));
 });

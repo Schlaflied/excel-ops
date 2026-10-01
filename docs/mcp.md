@@ -40,6 +40,32 @@ By default the bridge runs `python -m excel_ops.cli`. `EXCEL_OPS_PYTHON` may poi
 | `excel_ops.prepare_delivery` | Plan file only | Write the caller-declared plan file from explicit Agent selections at `planPath`; return review items instead of guessing missing mappings. |
 | `excel_ops.plan_delivery` | No | Run `excel-ops deliver --dry-run` and return the proposed writes, review items, and blockers. |
 | `excel_ops.run_delivery` | Yes | Run an approved delivery, verify XLSX, generate selected XLSX/CSV/PDF artifacts, and return Manifest evidence. |
+| `excel_ops.scan_workbook_health` | No | Scan one XLSX/XLSM and return findings plus source-bound repair actions. |
+| `excel_ops.plan_workbook_health_repair` | No | Validate selected action IDs and baselines without creating an output workbook. |
+| `excel_ops.run_workbook_health_repair` | Yes | Apply an explicitly approved allowlist, reopen and rescan the candidate, and publish only reconciled output. |
+
+### Workbook health workflow
+
+Call `scan_workbook_health` first. It and the CLI use one versioned JSON contract
+with `before`, `actions`, `changes`, `remaining`, `new`, and `failures`. Pass only
+reviewed action IDs and required baselines to `plan_workbook_health_repair`; this
+is a dry run and does not create the requested output.
+
+Only call `run_workbook_health_repair` after explicit user approval, with
+`confirmed: true`. The MCP adapter only validates input and invokes Python.
+Python writes a candidate, reopens and rescans it, and publishes it only when
+every authorized finding disappeared, every unauthorized finding remained, and
+no new finding appeared.
+
+```bash
+excel-ops health-scan workbook.xlsx
+excel-ops health-repair workbook.xlsx repaired.xlsx --request examples/health-repair-request.json --dry-run
+excel-ops health-repair workbook.xlsx repaired.xlsx --request examples/health-repair-request.json --confirm
+```
+
+`mode` distinguishes `scan`, `dry_run`, and `verified_repair`. Reconciliation
+failure returns `verified: false`, named failures, no published output, and a
+non-zero CLI exit.
 
 The intended Agent sequence is `scan_workdir → prepare_delivery → plan_delivery → explicit user approval → run_delivery`. Preparation accepts structured intent rather than natural language: the Host Agent selects inputs and supplies the target template, sheet, and field mapping. Missing business decisions return `needs_review` and no executable plan is written. Paths are confined to explicit authorized roots, existing plans are not overwritten by default, and a replacement requires the current SHA-256 digest.
 

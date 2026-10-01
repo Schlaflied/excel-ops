@@ -62,6 +62,11 @@ from .health_models import (
 )
 from .health_repair_plan import plan_workbook_health_repairs
 from .health_repair_apply import apply_workbook_health_repairs
+from .health_repair_verification import (
+    HealthRepairVerification,
+    health_workflow_contract,
+    repair_and_verify_workbook_health,
+)
 from .health_scan import scan_workbook_health
 from .idempotency import (
     ConnectorConflict,
@@ -352,6 +357,9 @@ __all__ = [
     "HealthScanResult",
     "plan_workbook_health_repairs",
     "apply_workbook_health_repairs",
+    "HealthRepairVerification",
+    "health_workflow_contract",
+    "repair_and_verify_workbook_health",
     "HealthRepairApplyError",
     "HealthRepairChange",
     "HealthRepairResult",
