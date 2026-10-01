@@ -154,8 +154,15 @@ The following capabilities entered `main` after v0.3.0 and therefore must not be
 
 - **What it does:** scans `.xlsx` and `.xlsm` files for numeric text, extra whitespace, invisible characters, duplicate headers, blank rows inside the detected data region, suspicious merged cells, default empty sheets, and isolated content beyond the primary working area.
 - **Output and evidence:** returns a stable, JSON-serializable `HealthScanResult` whose findings include a code, severity, sheet, exact cell or range, observed evidence, suggested action, and fixability classification; the source SHA-256 is checked before and after inspection.
-- **Safety boundary:** never saves or modifies the workbook and never executes macros; unreadable or unsupported files fail closed. `no_known_issues` means only that none of the declared checks found a problem, not that the workbook is universally healthy. Repair planning, mutation, CLI, and MCP entry points remain out of scope.
+- **Safety boundary:** never saves or modifies the workbook and never executes macros; unreadable or unsupported files fail closed. `no_known_issues` means only that none of the declared checks found a problem, not that the workbook is universally healthy. Mutation, CLI, and MCP entry points remain out of scope.
 - **Implementation:** [Issue #93](https://github.com/Schlaflied/excel-ops/issues/93)
+
+### 20. Reviewable workbook-health repair plans
+
+- **What it does:** extends the health scan to detect mixed date formats, inconsistent font/fill/number-format signatures, filter/freeze/print-area mismatches, and columns that mix blanks with numeric zeroes; converts every finding into one stable dry-run action.
+- **Output and evidence:** `plan_workbook_health_repairs(...)` returns JSON-serializable actions with a stable action ID, finding ID, classification, decision, operation, exact impact scope, structured current-state digest, and a concrete or baseline-gated proposed state. Action IDs bind the workbook SHA-256 and observed state, so a decision from another workbook or an older version is rejected as stale. Callers may select or reject individual supported actions without applying them.
+- **Safety boundary:** this stage never saves a workbook. Numeric-text conversion, blank/zero policy, unmerging, row/content/sheet removal, date or locale formatting, and style normalization are never silently safe. Style, date, duplicate-header, and blank/zero actions cannot be selected until their required baseline validates against the current finding; duplicate names are checked against the complete normalized header row. Numeric candidates never pass through binary float: decimals use canonical decimal strings, and values beyond Excel's 15-significant-digit precision can only remain text. No whole-sheet beautification or majority-format inference is performed. Blank/zero inspection has a fixed cell budget and emits a named `unsupported` finding instead of traversing an unbounded sparse rectangle. CLI/MCP mutation and actual repair remain out of scope.
+- **Implementation:** [Issue #94](https://github.com/Schlaflied/excel-ops/issues/94)
 
 ## What can currently be composed
 
